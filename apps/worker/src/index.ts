@@ -4,8 +4,11 @@ import {
   ResearchPreviewRequest,
   VerifyProviderRequest,
   type ProgressEvent,
+  type ResearchPreviewResult,
   type VerifyProviderResult,
 } from "@synthora/schemas";
+import { resolveOwner, type Owner } from "./storage/owner.js";
+import { D1SessionStore, type SessionStore } from "./storage/sessions.js";
 import { CrossrefClient } from "./literature/crossref.js";
 import { MinIntervalLimiter, type FetchFn } from "./lib/http.js";
 import { EuropePmcClient } from "./literature/europepmc.js";
@@ -20,9 +23,11 @@ export interface Env {
   NCBI_API_KEY?: string;
   /** Operator contact for Crossref's polite pool. Optional. */
   CROSSREF_MAILTO?: string;
+  /** Saved research sessions. Optional: without it, research still runs but is not saved. */
+  DB?: D1Database;
 }
 
-export type Deps = PipelineDeps;
+export type Deps = PipelineDeps & { sessions?: SessionStore };
 
 const MAX_BODY_BYTES = 16 * 1024;
 
@@ -57,6 +62,7 @@ function defaultDeps(env: Env): Deps {
       { mailto: env.CROSSREF_MAILTO || undefined },
       { fetch: (input, init) => fetch(input, init), limiter: crossrefLimiter },
     ),
+    ...(env.DB && { sessions: new D1SessionStore(env.DB) }),
   };
 }
 
@@ -133,12 +139,11 @@ async function verifyProvider(request: Request, deps: Deps): Promise<Response> {
 }
 
 /**
- * First end-to-end slice: search, rank, and extract the top papers with the
- * user's own key. Provisional: this becomes the durable research workflow
- * behind /api/research/:id/run. It only runs the extraction prompt, so it
- * cannot be used as a general-purpose LLM proxy.
+ * Runs the full research pipeline with the user's own key. It only runs
+ * Synthora's own prompts, so it cannot be used as a general-purpose LLM proxy.
+ * Completed results are saved for the requesting browser (never the key).
  */
-async function researchPreview(request: Request, deps: Deps): Promise<Response> {
+async function researchPreview(request: Request, ctx: Context): Promise<Response> {
   const noStore = { "cache-control": "no-store" };
 
   const key = ApiKey.fromRequest(request);
@@ -149,11 +154,27 @@ async function researchPreview(request: Request, deps: Deps): Promise<Response> 
   const parsed = ResearchPreviewRequest.safeParse(body.value);
   if (!parsed.success) return invalidRequest(parsed.error.issues);
 
-  if (request.headers.get("accept")?.includes(NDJSON)) return streamResearch(parsed.data, key, deps);
+  const owner = (await ctx.owner()).id;
+  if (request.headers.get("accept")?.includes(NDJSON)) return streamResearch(parsed.data, key, ctx.deps, owner);
 
-  const outcome = await runResearch(parsed.data, key, deps, { emit: () => {}, isCancelled: () => false });
+  const started = Date.now();
+  const outcome = await runResearch(parsed.data, key, ctx.deps, { emit: () => {}, isCancelled: () => false });
   if (!outcome.ok) return json({ error: outcome.error, ...(outcome.outcomes && { outcomes: outcome.outcomes }) }, outcome.status, noStore);
-  return json(outcome.result, 200, noStore);
+  const sessionId = await saveSession(ctx.deps, owner, parsed.data, outcome.result, Date.now() - started);
+  return json(outcome.result, 200, { ...noStore, ...(sessionId && { "x-session-id": sessionId }) });
+}
+
+/** Saving is best-effort: a storage failure must never lose the user a result they have already paid for. */
+async function saveSession(deps: Deps, owner: string, params: PipelineParams, result: ResearchPreviewResult, durationMs: number): Promise<string | undefined> {
+  if (!deps.sessions) return undefined;
+  // Runs that produced no verified data (e.g. the key was rejected) have nothing worth reopening.
+  if (!result.extractions.some((e) => e.status === "extracted")) return undefined;
+  try {
+    return await deps.sessions.save({ owner, question: params.query, provider: params.provider, model: params.model, durationMs, result });
+  } catch (err) {
+    console.error("Saving research session failed", err instanceof Error ? err.name : typeof err);
+    return undefined;
+  }
 }
 
 /**
@@ -162,7 +183,7 @@ async function researchPreview(request: Request, deps: Deps): Promise<Response> 
  * fail), the pipeline stops before its next model call so a cancelled run
  * does not keep spending the user's tokens.
  */
-function streamResearch(params: PipelineParams, key: ApiKey, deps: Deps): Response {
+function streamResearch(params: PipelineParams, key: ApiKey, deps: Deps, owner: string): Response {
   const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
   const writer = writable.getWriter();
   const encoder = new TextEncoder();
@@ -177,8 +198,15 @@ function streamResearch(params: PipelineParams, key: ApiKey, deps: Deps): Respon
 
   void (async () => {
     try {
+      const started = Date.now();
       const outcome = await runResearch(params, key, deps, { emit, isCancelled: () => disconnected });
-      emit(outcome.ok ? { type: "result", result: outcome.result } : { type: "error", message: outcome.error });
+      if (!outcome.ok) {
+        emit({ type: "error", message: outcome.error });
+        return;
+      }
+      // Saved even if the client has gone: the tokens were spent, so the report should be there when they return.
+      const sessionId = await saveSession(deps, owner, params, outcome.result, Date.now() - started);
+      emit({ type: "result", result: outcome.result, ...(sessionId && { sessionId }) });
     } catch (err) {
       console.error("Research pipeline failed", err instanceof Error ? err.name : typeof err);
       emit({ type: "error", message: "Something went wrong while running this research." });
@@ -190,19 +218,89 @@ function streamResearch(params: PipelineParams, key: ApiKey, deps: Deps): Respon
   return new Response(readable, { headers: { "content-type": `${NDJSON}; charset=utf-8`, "cache-control": "no-store" } });
 }
 
-const ROUTES: Record<string, { method: string; handler: (request: Request, deps: Deps) => Promise<Response> }> = {
-  "/api/health": { method: "GET", handler: async () => json({ status: "ok" }) },
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const noStoreHeaders = { "cache-control": "no-store" };
+
+function persistenceUnavailable(): Response {
+  return json({ error: "Saved research is not available: no database is configured." }, 503, noStoreHeaders);
+}
+
+async function listSessions(_request: Request, ctx: Context): Promise<Response> {
+  if (!ctx.deps.sessions) return persistenceUnavailable();
+  return json({ sessions: await ctx.deps.sessions.list((await ctx.owner()).id) }, 200, noStoreHeaders);
+}
+
+async function getSession(_request: Request, ctx: Context, params: Record<string, string>): Promise<Response> {
+  if (!ctx.deps.sessions) return persistenceUnavailable();
+  const id = params.id ?? "";
+  // Another browser's session is indistinguishable from one that does not exist.
+  const record = SESSION_ID.test(id) ? await ctx.deps.sessions.get((await ctx.owner()).id, id) : undefined;
+  return record ? json(record, 200, noStoreHeaders) : json({ error: "Not found" }, 404, noStoreHeaders);
+}
+
+async function deleteSession(_request: Request, ctx: Context, params: Record<string, string>): Promise<Response> {
+  if (!ctx.deps.sessions) return persistenceUnavailable();
+  const id = params.id ?? "";
+  const deleted = SESSION_ID.test(id) && (await ctx.deps.sessions.delete((await ctx.owner()).id, id));
+  return deleted ? new Response(null, { status: 204 }) : json({ error: "Not found" }, 404, noStoreHeaders);
+}
+
+/** Per-request context. The owner is resolved lazily, so routes that do not need it never set a cookie. */
+interface Context {
+  deps: Deps;
+  owner: () => Promise<Owner>;
+}
+
+type Handler = (request: Request, ctx: Context, params: Record<string, string>) => Promise<Response>;
+
+const ROUTES: Array<{ method: string; path: string; handler: Handler }> = [
+  { method: "GET", path: "/api/health", handler: async () => json({ status: "ok" }) },
   // Provisional: becomes an internal step of the Literature Search agent.
-  "/api/literature/search": { method: "POST", handler: literatureSearch },
-  "/api/provider/verify": { method: "POST", handler: verifyProvider },
-  "/api/research/preview": { method: "POST", handler: researchPreview },
-};
+  { method: "POST", path: "/api/literature/search", handler: (r, c) => literatureSearch(r, c.deps) },
+  { method: "POST", path: "/api/provider/verify", handler: (r, c) => verifyProvider(r, c.deps) },
+  { method: "POST", path: "/api/research/preview", handler: researchPreview },
+  { method: "GET", path: "/api/research", handler: listSessions },
+  { method: "GET", path: "/api/research/:id", handler: getSession },
+  { method: "DELETE", path: "/api/research/:id", handler: deleteSession },
+];
+
+/** Matches "/api/research/:id" style patterns; returns the named segments, or undefined. */
+function match(pattern: string, pathname: string): Record<string, string> | undefined {
+  const want = pattern.split("/");
+  const got = pathname.split("/");
+  if (want.length !== got.length) return undefined;
+  const params: Record<string, string> = {};
+  for (let i = 0; i < want.length; i++) {
+    const w = want[i]!;
+    const g = got[i]!;
+    if (w.startsWith(":")) {
+      try {
+        params[w.slice(1)] = decodeURIComponent(g);
+      } catch {
+        return undefined; // malformed %-encoding: treat as no match (404), not a server error
+      }
+    } else if (w !== g) return undefined;
+  }
+  return params;
+}
 
 export async function handleRequest(request: Request, deps: Deps): Promise<Response> {
-  const route = ROUTES[new URL(request.url).pathname];
-  if (!route) return json({ error: "Not found" }, 404);
-  if (request.method !== route.method) return json({ error: "Method not allowed" }, 405, { allow: route.method });
-  return route.handler(request, deps);
+  const pathname = new URL(request.url).pathname;
+  const matches = ROUTES.flatMap((r) => {
+    const params = match(r.path, pathname);
+    return params ? [{ ...r, params }] : [];
+  });
+  if (matches.length === 0) return json({ error: "Not found" }, 404);
+  const route = matches.find((r) => r.method === request.method);
+  if (!route) return json({ error: "Method not allowed" }, 405, { allow: matches.map((r) => r.method).join(", ") });
+
+  let owner: Promise<Owner> | undefined;
+  const ctx: Context = { deps, owner: () => (owner ??= resolveOwner(request)) };
+  const response = await route.handler(request, ctx, route.params);
+
+  const cookie = owner && (await owner).setCookie;
+  if (cookie) response.headers.append("set-cookie", cookie);
+  return response;
 }
 
 export default {

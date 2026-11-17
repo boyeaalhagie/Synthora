@@ -7,6 +7,16 @@
   "observability": { "enabled": true },
   // The web app's dev proxy targets this port, so pin it rather than let wrangler pick another when it is busy.
   "dev": { "port": 8787 },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "synthora",
+      // Local development uses a SQLite file under .wrangler/. Before deploying, create the real database
+      // (`npx wrangler d1 create synthora`) and replace this placeholder with the id it prints.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "../../database/migrations"
+    }
+  ],
   "vars": {
     // Contact address NCBI asks E-utilities clients to send. Set your own in .dev.vars / dashboard.
     "NCBI_EMAIL": ""

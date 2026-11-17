@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Composer } from "./components/Composer.js";
 import { ConnectDialog } from "./components/ConnectDialog.js";
 import { PrintReport } from "./components/ReportDocument.js";
@@ -6,8 +6,8 @@ import { ReportPanel } from "./components/ReportPanel.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { Thread } from "./components/Thread.js";
 import { AiBot } from "./bot/AiBot.js";
-import { ApiError, runPreviewStream } from "./lib/api.js";
-import { applyProgress, initialProgress, type Connection, type Run } from "./lib/types.js";
+import { ApiError, deleteSession, getSession, listSessions, runPreviewStream } from "./lib/api.js";
+import { applyProgress, initialProgress, savedRun, type Connection, type Run } from "./lib/types.js";
 
 export function App() {
   // The key lives only here, in memory. Nothing in this app persists it.
@@ -22,6 +22,49 @@ export function App() {
 
   const update = (id: string, next: (run: Run) => Run) => setRuns((all) => all.map((r) => (r.id === id ? next(r) : r)));
 
+  // Saved research for this browser, oldest first so the sidebar (which lists newest first) stays consistent.
+  useEffect(() => {
+    let cancelled = false;
+    void listSessions().then((sessions) => {
+      if (cancelled || sessions.length === 0) return;
+      setRuns((all) => {
+        const known = new Set(all.map((r) => r.sessionId));
+        return [...sessions.filter((s) => !known.has(s.id)).reverse().map(savedRun), ...all];
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Opening a saved run fetches its full result once.
+  useEffect(() => {
+    if (active?.status !== "saved" || active.loadError) return;
+    const { id, sessionId } = active;
+    let cancelled = false;
+    getSession(sessionId)
+      .then((record) => {
+        if (!cancelled) update(id, (run) => (run.status === "saved" ? { ...run, status: "done", result: record.result } : run));
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) update(id, (run) => (run.status === "saved" ? { ...run, loadError: err instanceof ApiError ? err.message : "Could not load this research." } : run));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [active?.id, active?.status]);
+
+  async function removeRun(run: Run) {
+    if (!window.confirm(`Delete “${run.query}”? This cannot be undone.`)) return;
+    try {
+      if (run.sessionId) await deleteSession(run.sessionId);
+      setRuns((all) => all.filter((r) => r.id !== run.id));
+      if (activeId === run.id) setActiveId(null);
+    } catch (err) {
+      window.alert(err instanceof ApiError ? err.message : "Could not delete this research.");
+    }
+  }
+
   async function startRun(query: string, topN: number) {
     if (!connection) return;
     const id = crypto.randomUUID();
@@ -32,13 +75,13 @@ export function App() {
     setActiveId(id);
 
     try {
-      const result = await runPreviewStream(
+      const { result, sessionId } = await runPreviewStream(
         { query, provider: connection.provider, model: connection.model, topN },
         connection.key,
         (event) => update(id, (run) => ({ ...run, progress: applyProgress(run.progress, event) })),
         controller.signal,
       );
-      update(id, (run) => ({ ...base, progress: run.progress, status: "done", finishedAt: Date.now(), result }));
+      update(id, (run) => ({ ...base, progress: run.progress, status: "done", finishedAt: Date.now(), result, ...(sessionId && { sessionId }) }));
     } catch (err) {
       const cancelled = err instanceof DOMException && err.name === "AbortError";
       update(id, (run) => ({
@@ -72,6 +115,7 @@ export function App() {
         activeRunId={activeId}
         connection={connection}
         onSelect={setActiveId}
+        onDelete={(run) => void removeRun(run)}
         onNew={() => setActiveId(null)}
         onConnect={() => setDialogOpen(true)}
       />

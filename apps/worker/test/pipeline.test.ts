@@ -9,6 +9,9 @@ import { handleRequest } from "../src/index.js";
 import { ApiKey } from "../src/providers/api-key.js";
 import type { GenerateRequest, ProviderAdapter } from "../src/providers/types.js";
 import { runResearch, type PipelineDeps } from "../src/research/pipeline.js";
+import { hashToken } from "../src/storage/owner.js";
+import { D1SessionStore } from "../src/storage/sessions.js";
+import { testD1 } from "./d1-shim.js";
 import { paper } from "./helpers.js";
 
 const KEY = "sk-test-0123456789abcdefghijklmnop";
@@ -212,6 +215,27 @@ describe("POST /api/research/preview (streaming)", () => {
     expect(last?.type).toBe("result");
     expect(last?.type === "result" && last.result.report.status).toBe("written");
     expect(JSON.stringify(lines)).not.toContain(KEY);
+  });
+
+  it("saves the completed run for the requesting browser and returns its session id", async () => {
+    const model = scriptedModel();
+    const sessions = new D1SessionStore(testD1());
+    const res = await handleRequest(
+      new Request("http://localhost/api/research/preview", {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/x-ndjson", "x-provider-key": KEY },
+        body: JSON.stringify(params),
+      }),
+      { ...deps(studies, model.createAdapter), sessions },
+    );
+    const cookie = res.headers.get("set-cookie")!.split(";")[0]!;
+    const last = ProgressEvent.parse(JSON.parse((await res.text()).trim().split("\n").at(-1)!));
+    expect(last.type === "result" && last.sessionId).toMatch(/^[0-9a-f-]{36}$/);
+
+    const owner = await hashToken(cookie.split("=")[1]!);
+    const saved = await sessions.list(owner);
+    expect(saved.map((s) => [s.id, s.question, s.title])).toEqual([[last.type === "result" ? last.sessionId : "", "ml cvd", "XGBoost for cardiovascular risk"]]);
+    expect(JSON.stringify(await sessions.get(owner, saved[0]!.id))).not.toContain(KEY);
   });
 
   it("still validates the request before streaming", async () => {

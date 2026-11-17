@@ -13,6 +13,8 @@ import type { LiteratureClient } from "../src/literature/types.js";
 import { SYSTEM_PROMPT as PLANNER } from "../src/agents/planner/agent.js";
 import type { ApiKey } from "../src/providers/api-key.js";
 import { ProviderError, type ProviderAdapter } from "../src/providers/types.js";
+import { D1SessionStore } from "../src/storage/sessions.js";
+import { testD1 } from "./d1-shim.js";
 import { paper } from "./helpers.js";
 
 const KEY = "sk-test-0123456789abcdefghijklmnop";
@@ -243,6 +245,35 @@ describe("POST /api/research/preview", () => {
       ["pmid:3", "no_doi"],
     ]);
     expect(adapters.prompts).toHaveLength(2);
+  });
+
+  it("saves runs that extracted papers, but not runs that produced no verified data", async () => {
+    const sessions = new D1SessionStore(testD1());
+    const res = await preview(
+      { query: "ml cvd", provider: "openai", model: "gpt-test", topN: 2 },
+      { "x-provider-key": KEY },
+      deps({ literatureClients: literature, createAdapter: extractingAdapters().createAdapter, sessions }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-session-id")).toMatch(/^[0-9a-f-]{36}$/);
+
+    // Every paper fails (e.g. a rejected key): nothing is saved.
+    const failing = await preview(
+      { query: "ml cvd", provider: "openai", model: "gpt-test", topN: 2 },
+      { "x-provider-key": KEY },
+      deps({
+        literatureClients: literature,
+        createAdapter: (provider) => ({
+          provider,
+          listModels: async () => [],
+          generate: async () => {
+            throw new ProviderError("invalid_key", 401);
+          },
+        }),
+        sessions,
+      }),
+    );
+    expect(failing.headers.get("x-session-id")).toBeNull();
   });
 
   it("requires a provider key and a model", async () => {

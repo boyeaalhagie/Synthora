@@ -5,7 +5,7 @@ import type { AiBotEmotion, AiBotMotion } from "../bot/engine.js";
 import { formatDuration, formatNumber, humanize, studyLabel } from "../lib/format.js";
 import { PROVIDER_LABELS, STEPS, type Run } from "../lib/types.js";
 import { ProgressChecklist } from "./ProgressChecklist.js";
-import { Badge, Button, Icon } from "./ui.js";
+import { Badge, Button, Icon, Spinner } from "./ui.js";
 
 const EXTRACTION_REJECTION: Record<RejectedItem["reason"], string> = {
   quote_too_short: "quote too short to verify",
@@ -323,6 +323,18 @@ export function Thread({ run, onCancel }: { run: Run; onCancel: () => void }) {
       <div className="ml-auto max-w-[85%] rounded-2xl bg-sunken px-4 py-3 text-sm">{run.query}</div>
 
       {run.status === "running" && <Running run={run} onCancel={onCancel} />}
+
+      {run.status === "saved" &&
+        (run.loadError ? (
+          <p role="alert" className="flex items-start gap-2 rounded-xl bg-bad-soft px-4 py-3 text-sm text-bad">
+            <Icon name="alert" className="mt-0.5" />
+            {run.loadError}
+          </p>
+        ) : (
+          <p className="flex items-center gap-2 text-sm text-muted" aria-live="polite">
+            <Spinner className="text-accent" /> Loading saved research…
+          </p>
+        ))}
 
       {(run.status === "error" || run.status === "cancelled") && (
         <>

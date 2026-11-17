@@ -23,7 +23,8 @@ export const ProgressEvent = z.discriminatedUnion("type", [
   }),
   /** Per-paper extraction progress. */
   z.object({ type: z.literal("extract"), completed: z.number().int().nonnegative(), total: z.number().int().nonnegative() }),
-  z.object({ type: z.literal("result"), result: ResearchPreviewResult }),
+  /** `sessionId` is set when the result was saved and can be reopened later. */
+  z.object({ type: z.literal("result"), result: ResearchPreviewResult, sessionId: z.string().optional() }),
   z.object({ type: z.literal("error"), message: z.string() }),
 ]);
 export type ProgressEvent = z.infer<typeof ProgressEvent>;

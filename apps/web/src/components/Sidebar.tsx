@@ -6,6 +6,7 @@ export function Sidebar({
   activeRunId,
   connection,
   onSelect,
+  onDelete,
   onNew,
   onConnect,
 }: {
@@ -13,6 +14,7 @@ export function Sidebar({
   activeRunId: string | null;
   connection: Connection | null;
   onSelect: (id: string) => void;
+  onDelete: (run: Run) => void;
   onNew: () => void;
   onConnect: () => void;
 }) {
@@ -34,11 +36,11 @@ export function Sidebar({
         {runs.length === 0 && <p className="px-3 text-sm text-faint">No research yet.</p>}
         <ul className="flex flex-col gap-0.5 overflow-y-auto">
           {[...runs].reverse().map((run) => (
-            <li key={run.id}>
+            <li key={run.id} className="group relative">
               <button
                 type="button"
                 onClick={() => onSelect(run.id)}
-                className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition ${
+                className={`flex w-full items-center gap-2 rounded-lg py-2 pr-8 pl-3 text-left text-sm transition ${
                   run.id === activeRunId ? "bg-sunken font-medium text-ink" : "text-muted hover:bg-sunken"
                 }`}
               >
@@ -46,15 +48,26 @@ export function Sidebar({
                   <Spinner className="size-3 text-accent" />
                 ) : (
                   <span
-                    className={`size-1.5 shrink-0 rounded-full ${run.status === "done" ? "bg-ok" : run.status === "error" ? "bg-bad" : "bg-faint"}`}
+                    className={`size-1.5 shrink-0 rounded-full ${run.status === "done" || run.status === "saved" ? "bg-ok" : run.status === "error" ? "bg-bad" : "bg-faint"}`}
                   />
                 )}
                 <span className="truncate">{run.query}</span>
               </button>
+              {run.status !== "running" && (
+                <button
+                  type="button"
+                  onClick={() => onDelete(run)}
+                  aria-label={`Delete “${run.query}”`}
+                  title="Delete"
+                  className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded p-1 text-faint opacity-0 transition group-hover:opacity-100 hover:text-bad focus-visible:opacity-100"
+                >
+                  <Icon name="x" />
+                </button>
+              )}
             </li>
           ))}
         </ul>
-        <p className="px-3 pt-2 text-xs text-faint">Sessions are kept in this tab only for now.</p>
+        <p className="px-3 pt-2 text-xs text-faint">Completed research is saved in this browser. API keys are never saved.</p>
       </section>
 
       <button

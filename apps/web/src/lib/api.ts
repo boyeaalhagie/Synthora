@@ -1,4 +1,4 @@
-import type { LlmProvider, ProgressEvent, ResearchPreviewResult, VerifyProviderResult } from "@synthora/schemas";
+import type { LlmProvider, ProgressEvent, ResearchPreviewResult, SessionRecord, SessionSummary, VerifyProviderResult } from "@synthora/schemas";
 
 /** An API failure with a message safe to show (the server never echoes keys). */
 export class ApiError extends Error {
@@ -60,7 +60,7 @@ export async function runPreviewStream(
   key: string,
   onEvent: (event: ProgressEvent) => void,
   signal?: AbortSignal,
-): Promise<ResearchPreviewResult> {
+): Promise<{ result: ResearchPreviewResult; sessionId?: string }> {
   let response: Response;
   try {
     response = await fetch("/api/research/preview", {
@@ -88,7 +88,7 @@ export async function runPreviewStream(
     for (const line of lines) {
       if (!line.trim()) continue;
       const event = JSON.parse(line) as ProgressEvent;
-      if (event.type === "result") return event.result;
+      if (event.type === "result") return { result: event.result, ...(event.sessionId && { sessionId: event.sessionId }) };
       if (event.type === "error") throw new ApiError(event.message, 200);
       onEvent(event);
     }
@@ -98,3 +98,23 @@ export async function runPreviewStream(
 }
 
 const NDJSON_TYPE = "application/x-ndjson";
+
+/** Saved sessions belong to this browser (an HttpOnly cookie the server sets). Resolves [] when saving is not configured. */
+export async function listSessions(): Promise<SessionSummary[]> {
+  const response = await fetch("/api/research").catch(() => undefined);
+  if (!response?.ok) return [];
+  const data = (await response.json()) as { sessions: SessionSummary[] };
+  return data.sessions;
+}
+
+export async function getSession(id: string): Promise<SessionRecord> {
+  const response = await fetch(`/api/research/${encodeURIComponent(id)}`);
+  const data: unknown = await response.json().catch(() => undefined);
+  if (!response.ok) throw new ApiError(response.status === 404 ? "This saved research no longer exists." : errorMessage(data, response.status), response.status);
+  return data as SessionRecord;
+}
+
+export async function deleteSession(id: string): Promise<void> {
+  const response = await fetch(`/api/research/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!response.ok && response.status !== 404) throw new ApiError("Could not delete this research.", response.status);
+}

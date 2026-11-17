@@ -1,23 +1,23 @@
 {
-    "name":  "synthora",
-    "private":  true,
-    "type":  "module",
-    "workspaces":  [
-                       "packages/*",
-                       "apps/*"
-                   ],
-    "scripts":  {
-                    "dev":  "concurrently --names worker,web --prefix-colors yellow,cyan \"npm run dev:worker\" \"npm run dev:web\"",
-                    "dev:worker":  "npm run dev --workspace @synthora/worker",
-                    "dev:web":  "npm run dev --workspace @synthora/web",
-                    "typecheck":  "npm run typecheck --workspaces --if-present",
-                    "test":  "npm run test --workspaces --if-present",
-                    "eval":  "npm run eval --workspace @synthora/worker --"
-                },
-    "engines":  {
-                    "node":  "\u003e=20"
-                },
-    "devDependencies":  {
-                            "concurrently":  "^9.2.5"
-                        }
+  "name": "synthora",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently --names worker,web --prefix-colors yellow,cyan \"npm run dev:worker\" \"npm run dev:web\"",
+    "dev:worker": "npm run dev --workspace @synthora/worker",
+    "dev:web": "npm run dev --workspace @synthora/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "eval": "npm run eval --workspace @synthora/worker --"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.5"
+  }
 }
