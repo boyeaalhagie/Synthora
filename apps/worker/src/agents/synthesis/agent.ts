@@ -8,6 +8,7 @@ import {
   type ReportSection,
   type ReportSectionId,
   type ResearchReport,
+  type SearchPlanResult,
   type SourceSearchOutcome,
   type VerificationResult,
 } from "@synthora/schemas";
@@ -20,6 +21,7 @@ import { PROMPT_VERSION, repairPrompt, synthesisPrompt, SYSTEM_PROMPT, type Clai
 
 export interface SynthesisInput {
   question: string;
+  plan: SearchPlanResult;
   search: { outcomes: readonly SourceSearchOutcome[]; totalRetrieved: number };
   papers: readonly Paper[];
   extractions: readonly ExtractionResult[];
@@ -143,6 +145,7 @@ export async function synthesizeReport(input: SynthesisInput, adapter: ProviderA
   const facts: PipelineFacts = {
     question: input.question,
     date: input.now.toISOString().slice(0, 10),
+    plan: input.plan,
     search: input.search,
     papers: input.papers,
     extractions: input.extractions,

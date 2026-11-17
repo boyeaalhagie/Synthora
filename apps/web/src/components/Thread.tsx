@@ -99,7 +99,7 @@ function Steps({ result, elapsed }: { result: ResearchPreviewResult; elapsed: nu
     <Collapsible
       summary={
         <>
-          Searched 2 sources, extracted {extracted} of {result.papers.length} papers,{" "}
+          Planned and searched 2 sources, extracted {extracted} of {result.papers.length} papers,{" "}
           {analysis.status === "analyzed" ? "analysed and verified the evidence" : `analysis ${analysis.status}`}
         </>
       }
@@ -107,7 +107,29 @@ function Steps({ result, elapsed }: { result: ResearchPreviewResult; elapsed: nu
     >
       <ol className="flex flex-col gap-4">
         <li>
-          <p className="font-medium">1. Literature search</p>
+          <p className="font-medium">1. Search plan</p>
+          {result.plan.status === "planned" ? (
+            <div className="mt-1 flex flex-col gap-1.5 text-muted">
+              <ul className="flex flex-col gap-0.5">
+                {result.plan.concepts.map((c) => (
+                  <li key={c.name}>
+                    <span className="text-ink">{c.name}:</span> {c.terms.join(", ")}
+                  </li>
+                ))}
+                {(result.plan.yearFrom !== null || result.plan.yearTo !== null) && (
+                  <li>
+                    Years: {result.plan.yearFrom ?? "any"}–{result.plan.yearTo ?? "present"}
+                  </li>
+                )}
+              </ul>
+              <code className="block rounded-md bg-sunken px-2 py-1 text-xs break-words">{result.plan.queries.pubmed}</code>
+            </div>
+          ) : (
+            <p className="mt-1 text-muted">Searched the question as written: {result.plan.reason}</p>
+          )}
+        </li>
+        <li>
+          <p className="font-medium">2. Literature search</p>
           <ul className="mt-1 flex flex-col gap-0.5 text-muted">
             {result.search.outcomes.map((o) => (
               <li key={o.source}>
@@ -121,7 +143,7 @@ function Steps({ result, elapsed }: { result: ResearchPreviewResult; elapsed: nu
           </ul>
         </li>
         <li>
-          <p className="font-medium">2. Paper extraction</p>
+          <p className="font-medium">3. Paper extraction</p>
           <ul className="mt-1 flex flex-col gap-1">
             {result.extractions.map((e) => (
               <li key={e.paperId} className="flex items-center gap-2">
@@ -139,7 +161,7 @@ function Steps({ result, elapsed }: { result: ResearchPreviewResult; elapsed: nu
           )}
         </li>
         <li>
-          <p className="font-medium">3. Evidence analysis</p>
+          <p className="font-medium">4. Evidence analysis</p>
           <p className="mt-1 text-muted">
             {analysis.status === "analyzed" &&
               `${count(analysis.evidence.length, "evidence item")} → ${count(analysis.findings.length, "finding")}, ${count(analysis.agreements.length, "agreement")}, ${count(analysis.conflicts.length, "conflict")}, ${count(analysis.gaps.length, "gap")}.`}
@@ -148,14 +170,14 @@ function Steps({ result, elapsed }: { result: ResearchPreviewResult; elapsed: nu
           </p>
         </li>
         <li>
-          <p className="font-medium">4. Citation verification</p>
+          <p className="font-medium">5. Citation verification</p>
           <ul className="mt-1 flex flex-col gap-0.5 text-muted">
             <li>{recordSummary(result)}</li>
             <li>{claimSummary(result)}</li>
           </ul>
         </li>
         <li>
-          <p className="font-medium">5. Report synthesis</p>
+          <p className="font-medium">6. Report synthesis</p>
           <p className="mt-1 text-muted">{reportSummary(result)}</p>
         </li>
       </ol>

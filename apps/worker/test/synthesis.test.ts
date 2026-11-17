@@ -138,6 +138,20 @@ const verification: VerificationResult = {
 
 const input: SynthesisInput = {
   question: "Which ML models predict CVD risk best?",
+  plan: {
+    status: "planned",
+    concepts: [
+      { name: "machine learning", terms: ["machine learning", "XGBoost"] },
+      { name: "cardiovascular risk", terms: ["cardiovascular risk"] },
+    ],
+    yearFrom: 2020,
+    yearTo: null,
+    queries: { pubmed: '("machine learning"[tiab] OR "XGBoost"[tiab]) AND ("cardiovascular risk"[tiab])', europepmc: "q", ranking: "r" },
+    model: "m",
+    promptVersion: "planner-v1",
+    attempts: 1,
+    usage: { inputTokens: 0, outputTokens: 0 },
+  },
   search: {
     outcomes: [
       { source: "pubmed", status: "ok", totalHits: 4934, returned: 25 },
@@ -206,7 +220,7 @@ describe("synthesizeReport", () => {
 
     expect(report.sections.map((s) => [s.id, s.generated, s.paragraphs.flat().length])).toEqual([
       ["summary", false, 2],
-      ["methods", true, 9],
+      ["methods", true, 10],
       ["findings", false, 1],
       ["comparison", false, 0],
       ["limitations", false, 1],
@@ -229,6 +243,9 @@ describe("synthesizeReport", () => {
 
     const methods = report.sections[1]!.paragraphs.flat().map((s) => s.text).join(" ");
     expect(methods).toContain("searched on 2026-11-16");
+    expect(methods).toContain(
+      'a search strategy of 2 concept groups (machine learning; cardiovascular risk), each matched by any of its synonyms in titles and abstracts, limited to 2020–present. The PubMed query was: ("machine learning"[tiab] OR "XGBoost"[tiab]) AND ("cardiovascular risk"[tiab]).',
+    );
     expect(methods).toContain("PubMed returned the top 25 of 4,934 matching records, and Europe PMC could not be searched");
     expect(methods).toContain("1 item was discarded");
     expect(methods).toContain("Verified data were obtained for 2 of 3 selected papers");

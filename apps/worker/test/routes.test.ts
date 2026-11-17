@@ -10,6 +10,7 @@ import {
 import { handleRequest, type Deps } from "../src/index.js";
 import { UpstreamError } from "../src/lib/http.js";
 import type { LiteratureClient } from "../src/literature/types.js";
+import { SYSTEM_PROMPT as PLANNER } from "../src/agents/planner/agent.js";
 import type { ApiKey } from "../src/providers/api-key.js";
 import { ProviderError, type ProviderAdapter } from "../src/providers/types.js";
 import { paper } from "./helpers.js";
@@ -170,6 +171,7 @@ describe("POST /api/provider/verify", () => {
 });
 
 describe("POST /api/research/preview", () => {
+  const plan = { concepts: [{ name: "ml", terms: ["machine learning"] }], yearFrom: null, yearTo: null };
   const extraction = JSON.stringify({
     objective: null,
     studyDesign: null,
@@ -189,6 +191,9 @@ describe("POST /api/research/preview", () => {
         return [];
       },
       async generate(request) {
+        if (request.system === PLANNER) {
+          return { text: JSON.stringify(plan), stopReason: "end", model: request.model, usage: { inputTokens: 1, outputTokens: 1 } };
+        }
         prompts.push(request.prompt);
         return { text: extraction, stopReason: "end", model: request.model, usage: { inputTokens: 10, outputTokens: 5 } };
       },
@@ -226,7 +231,8 @@ describe("POST /api/research/preview", () => {
       ["pmid:1", "extracted"],
       ["pmid:3", "extracted"],
     ]);
-    expect(body.usage).toEqual({ inputTokens: 20, outputTokens: 10 });
+    expect(body.usage).toEqual({ inputTokens: 21, outputTokens: 11 });
+    expect(body.plan.status).toBe("planned");
     // The stub extractions contain no evidence, so analysis and claim review are skipped without model calls.
     expect(body.analysis).toEqual({ status: "skipped", reason: "no_evidence" });
     expect(body.verification.claims).toEqual({ status: "skipped", reason: "no_claims" });
@@ -245,7 +251,7 @@ describe("POST /api/research/preview", () => {
     expect((await preview({ query: "ml cvd", provider: "openai" }, { "x-provider-key": KEY }, d)).status).toBe(400);
   });
 
-  it("returns 502 without calling the provider when every literature source failed", async () => {
+  it("returns 502 without extracting anything when every literature source failed", async () => {
     const adapters = extractingAdapters();
     const res = await preview(
       { query: "ml cvd", provider: "openai", model: "m" },

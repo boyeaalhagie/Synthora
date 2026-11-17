@@ -1,6 +1,15 @@
-import type { LlmProvider, ProgressEvent, ResearchPreviewResult, SourceSearchOutcome } from "@synthora/schemas";
+import type {
+  LiteratureSearchRequest,
+  LlmProvider,
+  ProgressEvent,
+  ResearchPreviewResult,
+  SearchPlanResult,
+  SourceSearchOutcome,
+} from "@synthora/schemas";
 import { analyzeEvidence } from "../agents/analysis/agent.js";
 import { extractPapers } from "../agents/extraction/agent.js";
+import { planSearch } from "../agents/planner/agent.js";
+import { fallbackQueries } from "../agents/planner/queries.js";
 import { synthesizeReport } from "../agents/synthesis/agent.js";
 import { assessClaimSupport } from "../agents/verification/agent.js";
 import { checkPapers, type CrossrefLookup } from "../agents/verification/records.js";
@@ -19,6 +28,8 @@ export interface PipelineParams {
   provider: LlmProvider;
   model: string;
   topN: number;
+  /** Set to false to search the question as written (used by the evaluation baseline). Defaults to true. */
+  planner?: boolean;
 }
 
 export interface PipelineControl {
@@ -42,9 +53,30 @@ const CANCELLED = { ok: false, status: 499, error: "The run was cancelled." } as
 export async function runResearch(params: PipelineParams, key: ApiKey, deps: PipelineDeps, control: PipelineControl): Promise<PipelineOutcome> {
   const { query, provider, model, topN } = params;
   const { emit, isCancelled } = control;
+  const adapter = deps.createAdapter(provider, key);
+  const now = new Date();
+
+  emit({ type: "step", step: "plan", status: "running" });
+  let plan: SearchPlanResult =
+    params.planner === false
+      ? { status: "fallback", reason: "Planning was disabled for this run.", queries: fallbackQueries(query), attempts: 0, usage: { inputTokens: 0, outputTokens: 0 } }
+      : await planSearch(query, adapter, { model, now });
+  emit({
+    type: "step",
+    step: "plan",
+    status: plan.status === "planned" ? "done" : "skipped",
+    detail: plan.status === "planned" ? `${plural(plan.concepts.length, "concept")}, ${plural(plan.concepts.reduce((n, c) => n + c.terms.length, 0), "search term")}` : `Searching the question as written: ${plan.reason}`,
+  });
+  if (isCancelled()) return CANCELLED;
 
   emit({ type: "step", step: "search", status: "running" });
-  const search = await searchLiterature({ query, limitPerSource: 25, sources: ["pubmed", "europepmc"] }, deps.literatureClients);
+  const searchRequest: LiteratureSearchRequest = { query, limitPerSource: 25, sources: ["pubmed", "europepmc"] };
+  let search = await searchLiterature(searchRequest, deps.literatureClients, plan.queries);
+  // A plan can be too narrow. Rather than return nothing, fall back to the question as written.
+  if (plan.status === "planned" && !search.papers.some((p) => p.abstract)) {
+    plan = { status: "fallback", reason: "The planned search found no papers with abstracts.", queries: fallbackQueries(query), attempts: plan.attempts, usage: plan.usage };
+    search = await searchLiterature(searchRequest, deps.literatureClients, plan.queries);
+  }
   if (search.outcomes.every((o) => o.status === "error")) {
     emit({ type: "step", step: "search", status: "failed", detail: "PubMed and Europe PMC could not be searched." });
     return { ok: false, status: 502, error: "Literature search failed", outcomes: search.outcomes };
@@ -59,8 +91,6 @@ export async function runResearch(params: PipelineParams, key: ApiKey, deps: Pip
     detail: `${plural(search.totalRetrieved, "record")} from ${plural(sources, "source")}; top ${papers.length} selected`,
   });
   if (isCancelled()) return CANCELLED;
-
-  const adapter = deps.createAdapter(provider, key);
   // Record checks (Crossref, retraction flags) need no model, so they run alongside the model steps.
   const recordChecks = checkPapers(papers, deps.crossref);
 
@@ -122,7 +152,7 @@ export async function runResearch(params: PipelineParams, key: ApiKey, deps: Pip
 
   // The report needs the verdicts and record checks: it drops unsupported claims and excludes retracted papers' evidence.
   emit({ type: "step", step: "report", status: "running" });
-  const report = await synthesizeReport({ question: query, search, papers, extractions, analysis, verification, now: new Date() }, adapter, { model });
+  const report = await synthesizeReport({ question: query, plan, search, papers, extractions, analysis, verification, now }, adapter, { model });
   emit({
     type: "step",
     step: "report",
@@ -136,7 +166,7 @@ export async function runResearch(params: PipelineParams, key: ApiKey, deps: Pip
         : { status: "failed", detail: report.message }),
   });
 
-  const usage = { inputTokens: 0, outputTokens: 0 };
+  const usage = { inputTokens: plan.usage.inputTokens, outputTokens: plan.usage.outputTokens };
   for (const step of [...extractions, analysis, claims, report]) {
     if (step.status === "skipped") continue;
     usage.inputTokens += step.usage.inputTokens;
@@ -147,6 +177,7 @@ export async function runResearch(params: PipelineParams, key: ApiKey, deps: Pip
     ok: true,
     result: {
       query,
+      plan,
       search: { outcomes: search.outcomes, totalRetrieved: search.totalRetrieved },
       papers,
       extractions,

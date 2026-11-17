@@ -3,6 +3,7 @@ import type {
   ExtractionResult,
   Paper,
   Reference,
+  SearchPlanResult,
   SourceSearchOutcome,
   VerificationResult,
 } from "@synthora/schemas";
@@ -40,6 +41,7 @@ export function buildReference(number: number, paper: Paper): Reference {
 export interface PipelineFacts {
   question: string;
   date: string;
+  plan: SearchPlanResult;
   search: { outcomes: readonly SourceSearchOutcome[]; totalRetrieved: number };
   papers: readonly Paper[];
   extractions: readonly ExtractionResult[];
@@ -64,8 +66,13 @@ export function methodsParagraphs(f: PipelineFacts): string[][] {
   const review = f.verification.claims;
   const unsupported = review.status === "assessed" ? review.assessments.filter((a) => a.verdict === "unsupported").length : 0;
 
+  const strategy =
+    f.plan.status === "planned"
+      ? `The question was translated into a search strategy of ${f.plan.concepts.length} concept ${f.plan.concepts.length === 1 ? "group" : "groups"} (${f.plan.concepts.map((c) => c.name).join("; ")}), each matched by any of its synonyms in titles and abstracts${f.plan.yearFrom !== null || f.plan.yearTo !== null ? `, limited to ${f.plan.yearFrom ?? "any year"}–${f.plan.yearTo ?? "present"}` : ""}. The PubMed query was: ${f.plan.queries.pubmed}.`
+      : `The question was searched as written (${f.plan.reason.replace(/\.$/, "")}).`;
   const search = [
     `This review addressed the question: “${f.question}”.`,
+    strategy,
     `PubMed and Europe PMC were searched on ${f.date}; ${searched.join(", and ")}.`,
     `After duplicate records were merged, the ${fmt(f.search.totalRetrieved)} retrieved records were ranked by combining each source's ranking with lexical relevance (BM25) using reciprocal rank fusion, and the ${f.papers.length} highest-ranked records with abstracts were selected.`,
   ];

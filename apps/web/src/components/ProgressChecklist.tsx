@@ -2,6 +2,7 @@ import type { PipelineStep } from "@synthora/schemas";
 import { STEPS, type Progress, type StepState } from "../lib/types.js";
 
 const LABELS: Record<PipelineStep, (topN: number) => string> = {
+  plan: () => "Plan the search strategy",
   search: () => "Search PubMed and Europe PMC",
   extract: (n) => `Extract the top ${n} ${n === 1 ? "paper" : "papers"}`,
   analyze: () => "Compare evidence across papers",

@@ -4,6 +4,7 @@ import type {
   LiteratureSource,
   Paper,
   Relevance,
+  SearchQueries,
   SourceSearchOutcome,
 } from "@synthora/schemas";
 import { UpstreamError } from "../lib/http.js";
@@ -28,9 +29,11 @@ interface Retrieved {
 export async function searchLiterature(
   request: LiteratureSearchRequest,
   clients: readonly LiteratureClient[],
+  /** Per-source queries and ranking text from a search plan. Without one, every source gets `request.query`. */
+  queries?: SearchQueries,
 ): Promise<LiteratureSearchResult> {
   const selected = clients.filter((c) => request.sources.includes(c.source));
-  const settled = await Promise.allSettled(selected.map((c) => c.search(request.query, request.limitPerSource)));
+  const settled = await Promise.allSettled(selected.map((c) => c.search(queries?.[c.source] ?? request.query, request.limitPerSource)));
 
   const outcomes: SourceSearchOutcome[] = [];
   const perSource: Retrieved[][] = [];
@@ -60,7 +63,7 @@ export async function searchLiterature(
   return {
     query: request.query,
     papers: rankPapers(
-      request.query,
+      queries?.ranking ?? request.query,
       papers.map((paper, i) => ({ paper, sourceRanks: sourceRanks[i]! })),
     ),
     outcomes,

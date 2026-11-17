@@ -2,7 +2,7 @@ import { z } from "zod";
 import { ResearchPreviewResult } from "./research.js";
 
 /** The pipeline's user-visible steps, in order. */
-export const PipelineStep = z.enum(["search", "extract", "analyze", "verify", "report"]);
+export const PipelineStep = z.enum(["plan", "search", "extract", "analyze", "verify", "report"]);
 export type PipelineStep = z.infer<typeof PipelineStep>;
 
 export const StepStatus = z.enum(["running", "done", "failed", "skipped"]);

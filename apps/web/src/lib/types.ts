@@ -11,7 +11,7 @@ export interface Connection {
   model: string;
 }
 
-export const STEPS: readonly PipelineStep[] = ["search", "extract", "analyze", "verify", "report"];
+export const STEPS: readonly PipelineStep[] = ["plan", "search", "extract", "analyze", "verify", "report"];
 
 export interface StepState {
   status: StepStatus | "pending";
@@ -26,7 +26,7 @@ export interface Progress {
 
 export function initialProgress(): Progress {
   return {
-    steps: { search: { status: "pending" }, extract: { status: "pending" }, analyze: { status: "pending" }, verify: { status: "pending" }, report: { status: "pending" } },
+    steps: { plan: { status: "pending" }, search: { status: "pending" }, extract: { status: "pending" }, analyze: { status: "pending" }, verify: { status: "pending" }, report: { status: "pending" } },
     extract: null,
   };
 }

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { EvidenceAnalysisResult } from "./analysis.js";
 import { ExtractionResult } from "./extraction.js";
 import { RankedPaper, SourceSearchOutcome } from "./literature.js";
+import { SearchPlanResult } from "./plan.js";
 import { LlmProvider } from "./provider.js";
 import { ResearchReport } from "./report.js";
 import { VerificationResult } from "./verification.js";
@@ -18,6 +19,8 @@ export type ResearchPreviewRequest = z.infer<typeof ResearchPreviewRequest>;
 
 export const ResearchPreviewResult = z.object({
   query: z.string(),
+  /** How the question was turned into source queries. */
+  plan: SearchPlanResult,
   search: z.object({ outcomes: z.array(SourceSearchOutcome), totalRetrieved: z.number().int().nonnegative() }),
   papers: z.array(RankedPaper),
   extractions: z.array(ExtractionResult),
