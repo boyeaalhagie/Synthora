@@ -7,6 +7,7 @@ import {
   type ResearchPreviewResult,
   type VerifyProviderResult,
 } from "@synthora/schemas";
+import { checkProtection, type Protection, type ProtectedAction } from "./security/protection.js";
 import { resolveOwner, type Owner } from "./storage/owner.js";
 import { D1SessionStore, type SessionStore } from "./storage/sessions.js";
 import { CrossrefClient } from "./literature/crossref.js";
@@ -25,9 +26,20 @@ export interface Env {
   CROSSREF_MAILTO?: string;
   /** Saved research sessions. Optional: without it, research still runs but is not saved. */
   DB?: D1Database;
+  /** Rate limiters (Cloudflare ratelimits bindings). */
+  VERIFY_LIMITER?: RateLimit;
+  RESEARCH_LIMITER?: RateLimit;
+  /** Turnstile bot protection. Both must be set to enable it; the site key is public, the secret is a secret. */
+  TURNSTILE_SITE_KEY?: string;
+  TURNSTILE_SECRET?: string;
 }
 
-export type Deps = PipelineDeps & { sessions?: SessionStore };
+export type Deps = PipelineDeps & {
+  sessions?: SessionStore;
+  protection?: Protection;
+  /** Public configuration the web app reads at startup. */
+  publicConfig?: { turnstileSiteKey?: string };
+};
 
 const MAX_BODY_BYTES = 16 * 1024;
 
@@ -63,7 +75,22 @@ function defaultDeps(env: Env): Deps {
       { fetch: (input, init) => fetch(input, init), limiter: crossrefLimiter },
     ),
     ...(env.DB && { sessions: new D1SessionStore(env.DB) }),
+    protection: {
+      limiters: {
+        ...(env.VERIFY_LIMITER && { verify: env.VERIFY_LIMITER }),
+        ...(env.RESEARCH_LIMITER && { research: env.RESEARCH_LIMITER }),
+      },
+      ...(env.TURNSTILE_SECRET && env.TURNSTILE_SITE_KEY && { turnstile: { secret: env.TURNSTILE_SECRET, fetch: (input, init) => fetch(input, init) } }),
+    },
+    publicConfig: env.TURNSTILE_SECRET && env.TURNSTILE_SITE_KEY ? { turnstileSiteKey: env.TURNSTILE_SITE_KEY } : {},
   };
+}
+
+/** Applies rate limits and the bot check for an action; returns the refusal response, if any. */
+async function guard(request: Request, deps: Deps, action: ProtectedAction): Promise<Response | undefined> {
+  const verdict = await checkProtection(request, action, deps.protection);
+  if (verdict.ok) return undefined;
+  return json({ error: verdict.error }, verdict.status, { ...noStoreHeaders, ...(verdict.retryAfter && { "retry-after": String(verdict.retryAfter) }) });
 }
 
 function json(body: unknown, status = 200, headers: HeadersInit = {}): Response {
@@ -120,6 +147,9 @@ async function verifyProvider(request: Request, deps: Deps): Promise<Response> {
 
   const body = await readJson(request);
   if (!body.ok) return body.response;
+  // Limits make this endpoint useless for bulk-testing stolen keys.
+  const refused = await guard(request, deps, "verify");
+  if (refused) return refused;
   const parsed = VerifyProviderRequest.safeParse(body.value);
   if (!parsed.success) return invalidRequest(parsed.error.issues);
 
@@ -153,6 +183,8 @@ async function researchPreview(request: Request, ctx: Context): Promise<Response
   if (!body.ok) return body.response;
   const parsed = ResearchPreviewRequest.safeParse(body.value);
   if (!parsed.success) return invalidRequest(parsed.error.issues);
+  const refused = await guard(request, ctx.deps, "research");
+  if (refused) return refused;
 
   const owner = (await ctx.owner()).id;
   if (request.headers.get("accept")?.includes(NDJSON)) return streamResearch(parsed.data, key, ctx.deps, owner);
@@ -255,6 +287,7 @@ type Handler = (request: Request, ctx: Context, params: Record<string, string>) 
 
 const ROUTES: Array<{ method: string; path: string; handler: Handler }> = [
   { method: "GET", path: "/api/health", handler: async () => json({ status: "ok" }) },
+  { method: "GET", path: "/api/config", handler: async (_r, c) => json(c.deps.publicConfig ?? {}, 200, noStoreHeaders) },
   // Provisional: becomes an internal step of the Literature Search agent.
   { method: "POST", path: "/api/literature/search", handler: (r, c) => literatureSearch(r, c.deps) },
   { method: "POST", path: "/api/provider/verify", handler: (r, c) => verifyProvider(r, c.deps) },
@@ -300,6 +333,7 @@ export async function handleRequest(request: Request, deps: Deps): Promise<Respo
 
   const cookie = owner && (await owner).setCookie;
   if (cookie) response.headers.append("set-cookie", cookie);
+  response.headers.set("x-content-type-options", "nosniff");
   return response;
 }
 

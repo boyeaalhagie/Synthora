@@ -1,12 +1,21 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
-  "name": "synthora-worker",
+  "name": "synthora",
   "main": "src/index.ts",
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
   // The web app's dev proxy targets this port, so pin it rather than let wrangler pick another when it is busy.
   "dev": { "port": 8787 },
+
+  // One deployment serves both the web app and the API. Only /api/* reaches the Worker code;
+  // everything else is a static asset, and unknown paths fall back to index.html for the app.
+  "assets": {
+    "directory": "../web/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+
   "d1_databases": [
     {
       "binding": "DB",
@@ -17,11 +26,23 @@
       "migrations_dir": "../../database/migrations"
     }
   ],
+
+  // Per-client (IP) limits on the actions that spend money or could be abused.
+  // namespace_id must be unique within your Cloudflare account.
+  "ratelimits": [
+    { "name": "VERIFY_LIMITER", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
+    { "name": "RESEARCH_LIMITER", "namespace_id": "1002", "simple": { "limit": 5, "period": 60 } }
+  ],
+
   "vars": {
     // Contact address NCBI asks E-utilities clients to send. Set your own in .dev.vars / dashboard.
-    "NCBI_EMAIL": ""
+    "NCBI_EMAIL": "",
+    // Public Turnstile site key. Bot protection turns on only when this and the TURNSTILE_SECRET secret are both set.
+    "TURNSTILE_SITE_KEY": ""
   }
-  // Secrets (set with `wrangler secret put`, never committed):
-  //   NCBI_API_KEY — optional; raises the NCBI rate limit from 3 to 10 requests/second.
+  // Secrets (set with `wrangler secret put <NAME>`, never committed):
+  //   TURNSTILE_SECRET — enables Turnstile together with TURNSTILE_SITE_KEY.
+  //   NCBI_API_KEY     — optional; raises the NCBI rate limit from 3 to 10 requests/second.
+  //   CROSSREF_MAILTO  — optional operator contact for Crossref's polite pool.
   // User LLM keys are NEVER configured here. They arrive per request (BYOK) and are not stored.
 }

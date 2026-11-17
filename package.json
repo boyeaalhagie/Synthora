@@ -12,7 +12,9 @@
     "dev:web": "npm run dev --workspace @synthora/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
-    "eval": "npm run eval --workspace @synthora/worker --"
+    "eval": "npm run eval --workspace @synthora/worker --",
+    "build": "npm run build --workspace @synthora/web",
+    "deploy": "npm run typecheck && npm test && npm run build && npm run db:migrate:remote --workspace @synthora/worker && npm run deploy --workspace @synthora/worker"
   },
   "engines": {
     "node": ">=20"
