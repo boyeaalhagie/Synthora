@@ -1,3 +1,6 @@
 # Copy to .dev.vars for local development. .dev.vars is git-ignored.
+# Operator contact addresses (yours, as the person running Synthora — never a user's).
 NCBI_EMAIL=you@example.com
+# Optional: puts Crossref requests in its faster "polite pool".
+CROSSREF_MAILTO=you@example.com
 # NCBI_API_KEY=

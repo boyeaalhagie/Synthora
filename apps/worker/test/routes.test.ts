@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { LiteratureSearchResult, LiteratureSource, LlmProvider, Paper, VerifyProviderResult } from "@synthora/schemas";
+import {
+  ResearchPreviewResult,
+  type LiteratureSearchResult,
+  type LiteratureSource,
+  type LlmProvider,
+  type Paper,
+  type VerifyProviderResult,
+} from "@synthora/schemas";
 import { handleRequest, type Deps } from "../src/index.js";
 import { UpstreamError } from "../src/lib/http.js";
 import type { LiteratureClient } from "../src/literature/types.js";
@@ -41,6 +48,7 @@ function deps(overrides: Partial<Deps> = {}): Deps {
   return {
     literatureClients: [stubClient("pubmed", [paper({ id: "pmid:1", pmid: "1" })]), stubClient("europepmc", [])],
     createAdapter: fakeAdapters("ok").createAdapter,
+    crossref: { work: async () => undefined },
     ...overrides,
   };
 }
@@ -158,5 +166,95 @@ describe("POST /api/provider/verify", () => {
   it("rejects unknown providers", async () => {
     const res = await verify({ provider: "acme" });
     expect(res.status).toBe(400);
+  });
+});
+
+describe("POST /api/research/preview", () => {
+  const extraction = JSON.stringify({
+    objective: null,
+    studyDesign: null,
+    population: null,
+    sampleSize: null,
+    dataset: null,
+    methods: [],
+    findings: [],
+    limitations: [],
+  });
+
+  function extractingAdapters() {
+    const prompts: string[] = [];
+    const createAdapter = (provider: LlmProvider): ProviderAdapter => ({
+      provider,
+      async listModels() {
+        return [];
+      },
+      async generate(request) {
+        prompts.push(request.prompt);
+        return { text: extraction, stopReason: "end", model: request.model, usage: { inputTokens: 10, outputTokens: 5 } };
+      },
+    });
+    return { createAdapter, prompts };
+  }
+
+  const literature = [
+    stubClient("pubmed", [
+      paper({ id: "pmid:1", pmid: "1", title: "Has abstract one", abstract: "First abstract text." }),
+      paper({ id: "pmid:2", pmid: "2", title: "No abstract" }),
+      paper({ id: "pmid:3", pmid: "3", title: "Has abstract two", abstract: "Second abstract text." }),
+      paper({ id: "pmid:4", pmid: "4", title: "Has abstract three", abstract: "Third abstract text." }),
+    ]),
+    stubClient("europepmc", []),
+  ];
+
+  const preview = (body: unknown, headers: Record<string, string>, d: Deps) =>
+    post("/api/research/preview", JSON.stringify(body), headers, d);
+
+  it("extracts the top-ranked papers that have abstracts and totals usage", async () => {
+    const adapters = extractingAdapters();
+    const res = await preview(
+      { query: "ml cvd", provider: "openai", model: "gpt-test", topN: 2 },
+      { "x-provider-key": KEY },
+      deps({ literatureClients: literature, createAdapter: adapters.createAdapter }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    const body = (await res.json()) as ResearchPreviewResult;
+    expect(ResearchPreviewResult.safeParse(body).success).toBe(true);
+    expect(body.papers.map((p) => p.id)).toEqual(["pmid:1", "pmid:3"]);
+    expect(body.extractions.map((e) => [e.paperId, e.status])).toEqual([
+      ["pmid:1", "extracted"],
+      ["pmid:3", "extracted"],
+    ]);
+    expect(body.usage).toEqual({ inputTokens: 20, outputTokens: 10 });
+    // The stub extractions contain no evidence, so analysis and claim review are skipped without model calls.
+    expect(body.analysis).toEqual({ status: "skipped", reason: "no_evidence" });
+    expect(body.verification.claims).toEqual({ status: "skipped", reason: "no_claims" });
+    // Record checks still run for every selected paper (the stub papers have no DOI).
+    expect(body.verification.papers.map((c) => [c.paperId, c.crossref])).toEqual([
+      ["pmid:1", "no_doi"],
+      ["pmid:3", "no_doi"],
+    ]);
+    expect(adapters.prompts).toHaveLength(2);
+  });
+
+  it("requires a provider key and a model", async () => {
+    const d = deps({ literatureClients: literature, createAdapter: extractingAdapters().createAdapter });
+    expect((await preview({ query: "ml cvd", provider: "openai", model: "m" }, {}, d)).status).toBe(400);
+    expect((await preview({ query: "ml cvd", provider: "openai" }, { "x-provider-key": KEY }, d)).status).toBe(400);
+  });
+
+  it("returns 502 without calling the provider when every literature source failed", async () => {
+    const adapters = extractingAdapters();
+    const res = await preview(
+      { query: "ml cvd", provider: "openai", model: "m" },
+      { "x-provider-key": KEY },
+      deps({
+        literatureClients: [stubClient("pubmed", new UpstreamError("down")), stubClient("europepmc", new UpstreamError("down"))],
+        createAdapter: adapters.createAdapter,
+      }),
+    );
+    expect(res.status).toBe(502);
+    expect(adapters.prompts).toEqual([]);
   });
 });

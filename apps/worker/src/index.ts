@@ -1,4 +1,15 @@
-import { LiteratureSearchRequest, VerifyProviderRequest, type VerifyProviderResult } from "@synthora/schemas";
+import {
+  LiteratureSearchRequest,
+  ResearchPreviewRequest,
+  VerifyProviderRequest,
+  type ResearchPreviewResult,
+  type VerifyProviderResult,
+} from "@synthora/schemas";
+import { analyzeEvidence } from "./agents/analysis/agent.js";
+import { extractPapers } from "./agents/extraction/agent.js";
+import { assessClaimSupport } from "./agents/verification/agent.js";
+import { checkPapers, type CrossrefLookup } from "./agents/verification/records.js";
+import { CrossrefClient } from "./literature/crossref.js";
 import { MinIntervalLimiter, type FetchFn } from "./lib/http.js";
 import { EuropePmcClient } from "./literature/europepmc.js";
 import { PubMedClient } from "./literature/pubmed.js";
@@ -9,11 +20,14 @@ import { ApiKey, createAdapter, ProviderError, PROVIDER_KEY_HEADER, type Adapter
 export interface Env {
   NCBI_EMAIL?: string;
   NCBI_API_KEY?: string;
+  /** Operator contact for Crossref's polite pool. Optional. */
+  CROSSREF_MAILTO?: string;
 }
 
 export interface Deps {
   literatureClients: readonly LiteratureClient[];
   createAdapter: AdapterFactory;
+  crossref: CrossrefLookup;
 }
 
 const MAX_BODY_BYTES = 16 * 1024;
@@ -38,8 +52,18 @@ function literatureClients(env: Env): LiteratureClient[] {
   return clients;
 }
 
+// Crossref asks clients to stay well under 50 requests/second.
+const crossrefLimiter = new MinIntervalLimiter(100);
+
 function defaultDeps(env: Env): Deps {
-  return { literatureClients: literatureClients(env), createAdapter: (provider, key) => createAdapter(provider, key) };
+  return {
+    literatureClients: literatureClients(env),
+    createAdapter: (provider, key) => createAdapter(provider, key),
+    crossref: new CrossrefClient(
+      { mailto: env.CROSSREF_MAILTO || undefined },
+      { fetch: (input, init) => fetch(input, init), limiter: crossrefLimiter },
+    ),
+  };
 }
 
 function json(body: unknown, status = 200, headers: HeadersInit = {}): Response {
@@ -114,11 +138,76 @@ async function verifyProvider(request: Request, deps: Deps): Promise<Response> {
   }
 }
 
+/**
+ * First end-to-end slice: search, rank, and extract the top papers with the
+ * user's own key. Provisional: this becomes the durable research workflow
+ * behind /api/research/:id/run. It only runs the extraction prompt, so it
+ * cannot be used as a general-purpose LLM proxy.
+ */
+async function researchPreview(request: Request, deps: Deps): Promise<Response> {
+  const noStore = { "cache-control": "no-store" };
+
+  const key = ApiKey.fromRequest(request);
+  if (!key) return json({ error: `Missing or malformed ${PROVIDER_KEY_HEADER} header` }, 400, noStore);
+
+  const body = await readJson(request);
+  if (!body.ok) return body.response;
+  const parsed = ResearchPreviewRequest.safeParse(body.value);
+  if (!parsed.success) return invalidRequest(parsed.error.issues);
+  const { query, provider, model, topN } = parsed.data;
+
+  const search = await searchLiterature(
+    { query, limitPerSource: 25, sources: ["pubmed", "europepmc"] },
+    deps.literatureClients,
+  );
+  if (search.outcomes.every((o) => o.status === "error")) {
+    return json({ error: "Literature search failed", outcomes: search.outcomes }, 502, noStore);
+  }
+
+  // Papers without abstracts cannot be extracted; take the best-ranked ones that have one.
+  const papers = search.papers.filter((p) => p.abstract).slice(0, topN);
+  const adapter = deps.createAdapter(provider, key);
+
+  // Record checks (Crossref, retraction flags) need no model, so they run
+  // alongside the model steps instead of after them.
+  const recordChecks = checkPapers(papers, deps.crossref);
+
+  const extractions = await extractPapers(papers, adapter, { model });
+
+  // Analysis sees only verified evidence. With none (e.g. the key was
+  // rejected during extraction) it is skipped without a model call.
+  const extracted = extractions.flatMap((e, i) =>
+    e.status === "extracted" ? [{ paper: papers[i]!, extraction: e.extraction }] : [],
+  );
+  const analysis = await analyzeEvidence(query, extracted, adapter, { model });
+  const claims = await assessClaimSupport(analysis, papers, adapter, { model });
+  const verification = { papers: await recordChecks, claims };
+
+  const usage = { inputTokens: 0, outputTokens: 0 };
+  for (const step of [...extractions, analysis, claims]) {
+    if (step.status === "skipped") continue;
+    usage.inputTokens += step.usage.inputTokens;
+    usage.outputTokens += step.usage.outputTokens;
+  }
+
+  const result: ResearchPreviewResult = {
+    query,
+    search: { outcomes: search.outcomes, totalRetrieved: search.totalRetrieved },
+    papers,
+    extractions,
+    analysis,
+    verification,
+    usage,
+  };
+  return json(result, 200, noStore);
+}
+
 const ROUTES: Record<string, { method: string; handler: (request: Request, deps: Deps) => Promise<Response> }> = {
   "/api/health": { method: "GET", handler: async () => json({ status: "ok" }) },
   // Provisional: becomes an internal step of the Literature Search agent.
   "/api/literature/search": { method: "POST", handler: literatureSearch },
   "/api/provider/verify": { method: "POST", handler: verifyProvider },
+  "/api/research/preview": { method: "POST", handler: researchPreview },
 };
 
 export async function handleRequest(request: Request, deps: Deps): Promise<Response> {

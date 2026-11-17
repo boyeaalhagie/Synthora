@@ -1,0 +1,32 @@
+{
+ "status": "ok",
+ "message-type": "work",
+ "message": {
+  "DOI": "10.1186/s12933-023-01985-3",
+  "type": "journal-article",
+  "title": [
+   "Machine learning in precision diabetes care and cardiovascular risk prediction"
+  ],
+  "issued": {
+   "date-parts": [
+    [
+     2023,
+     9,
+     25
+    ]
+   ]
+  },
+  "published": {
+   "date-parts": [
+    [
+     2023,
+     9,
+     25
+    ]
+   ]
+  },
+  "container-title": [
+   "Cardiovascular Diabetology"
+  ]
+ }
+}
