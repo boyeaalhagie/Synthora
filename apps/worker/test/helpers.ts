@@ -13,6 +13,8 @@ export function fixture(name: string): string {
 export interface RecordedCall {
   url: URL;
   init: RequestInit | undefined;
+  method: string;
+  headers: Headers;
 }
 
 /** A fetch stub that replays scripted responses in order and records each call. */
@@ -22,7 +24,13 @@ export function scriptedFetch(responses: Array<Response | Error | (() => Respons
 } {
   const calls: RecordedCall[] = [];
   const fetch: FetchFn = async (input, init) => {
-    calls.push({ url: new URL(input instanceof Request ? input.url : input), init });
+    const request = input instanceof Request ? input : undefined;
+    calls.push({
+      url: new URL(input instanceof Request ? input.url : input),
+      init,
+      method: (init?.method ?? request?.method ?? "GET").toUpperCase(),
+      headers: new Headers(init?.headers ?? request?.headers),
+    });
     const next = responses.shift();
     if (next === undefined) throw new Error("scriptedFetch: no more responses");
     if (next instanceof Error) throw next;

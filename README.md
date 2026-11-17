@@ -50,6 +50,27 @@ The response lists deduplicated `papers`, most relevant first, and a per-source 
 
 Each paper carries a `relevance` breakdown. Ranking is deterministic: BM25 over title and abstract (computed within the retrieved set) is fused with each source's own ranking using reciprocal rank fusion, so papers both sources return rank higher. See `apps/worker/src/literature/rank.ts`.
 
+### Connecting an LLM provider (BYOK)
+
+Users bring their own Anthropic, OpenAI or Gemini key. To verify a key and list the models it can use (no tokens are spent):
+
+```sh
+curl -X POST http://127.0.0.1:8787/api/provider/verify \
+  -H 'content-type: application/json' \
+  -H 'x-provider-key: <your key>' \
+  -d '{"provider": "anthropic"}'
+```
+
+The response is `{"valid": true, "models": [...]}`, or `{"valid": false, "error": {"kind": "invalid_key" | "rate_limited" | ...}}`. It returns 502 only when the provider couldn't be reached.
+
+How keys are handled (`apps/worker/src/providers/`):
+
+- The key travels only in the `x-provider-key` header, never in a URL or JSON body, and it is never stored, logged or echoed back.
+- It is wrapped in an `ApiKey` object that prints as `[REDACTED]` everywhere (`String()`, `JSON.stringify`, `console.log`). Only the provider adapter reads the real value, through an explicit `reveal()`.
+- Error messages are written by Synthora. Provider error text is discarded because some providers echo part of the key.
+- A new adapter is created for each request and never cached or shared between users.
+- OpenAI calls set `store: false`, so research content isn't kept in the user's OpenAI account.
+
 ### Configuration
 
 | Variable       | Kind   | Purpose                                                                 |
@@ -61,7 +82,7 @@ Each paper carries a `relevance` breakdown. Ranking is deterministic: BM25 over 
 
 1. ~~Literature discovery: PubMed + Europe PMC, normalisation, deduplication~~
 2. ~~Relevance ranking of retrieved papers (lexical; semantic ranking to follow with BYOK)~~
-3. BYOK provider adapters (OpenAI, Anthropic, Gemini) with key verification
+3. ~~BYOK provider adapters (OpenAI, Anthropic, Gemini) with key verification~~
 4. Paper extraction agent with schema-validated output
 5. Evidence analysis, citation verification (Crossref), report synthesis
 6. Durable orchestration (Cloudflare Workflows) with SSE progress

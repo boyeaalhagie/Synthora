@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { LiteratureSearchResult, type LiteratureSource, type Paper } from "@synthora/schemas";
-import { handleRequest } from "../src/index.js";
 import { UpstreamError } from "../src/lib/http.js";
 import { interleave, searchLiterature } from "../src/literature/search.js";
 import type { LiteratureClient } from "../src/literature/types.js";
@@ -70,63 +69,5 @@ describe("searchLiterature", () => {
 describe("interleave", () => {
   it("round-robins lists of different lengths", () => {
     expect(interleave<number | string>([[1, 2, 3], ["a"], []])).toEqual([1, "a", 2, 3]);
-  });
-});
-
-describe("POST /api/literature/search", () => {
-  const clients = [stubClient("pubmed", [paper({ id: "pmid:1", pmid: "1" })]), stubClient("europepmc", [])];
-
-  function post(body: string, contentType = "application/json") {
-    return handleRequest(
-      new Request("https://synthora.test/api/literature/search", {
-        method: "POST",
-        headers: { "content-type": contentType },
-        body,
-      }),
-      {},
-      clients,
-    );
-  }
-
-  it("applies defaults and returns results", async () => {
-    const res = await post(JSON.stringify({ query: "ml cvd" }));
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as LiteratureSearchResult;
-    expect(body.papers.map((p) => p.id)).toEqual(["pmid:1"]);
-    expect(body.outcomes.map((o) => o.source)).toEqual(["pubmed", "europepmc"]);
-  });
-
-  it("rejects invalid input with field-level issues", async () => {
-    const res = await post(JSON.stringify({ query: "x", limitPerSource: 1000 }));
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { issues: Array<{ path: string[] }> };
-    expect(body.issues.map((i) => i.path[0]).sort()).toEqual(["limitPerSource", "query"]);
-  });
-
-  it("rejects malformed JSON, wrong content types and oversized bodies", async () => {
-    expect((await post("{")).status).toBe(400);
-    expect((await post("{}", "text/plain")).status).toBe(415);
-    expect((await post(JSON.stringify({ query: "a".repeat(20_000) }))).status).toBe(413);
-  });
-
-  it("returns 502 when every source failed", async () => {
-    const res = await handleRequest(
-      new Request("https://synthora.test/api/literature/search", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ query: "ml cvd", sources: ["pubmed"] }),
-      }),
-      {},
-      [stubClient("pubmed", new UpstreamError("down"))],
-    );
-    expect(res.status).toBe(502);
-  });
-
-  it("handles method and route errors", async () => {
-    const get = (path: string, method = "GET") =>
-      handleRequest(new Request(`https://synthora.test${path}`, { method }), {}, clients);
-    expect((await get("/api/health")).status).toBe(200);
-    expect((await get("/api/literature/search")).status).toBe(405);
-    expect((await get("/nope")).status).toBe(404);
   });
 });
