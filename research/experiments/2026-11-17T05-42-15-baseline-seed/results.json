@@ -1,0 +1,64 @@
+{
+  "kind": "retrieval",
+  "dataset": "synthora-seed",
+  "k": 10,
+  "baseline": [
+    {
+      "id": "ml-cvd-risk",
+      "m": {
+        "precisionAtK": 0.5,
+        "recallAtK": 1,
+        "ndcgAtK": 0.9359238994390142,
+        "reciprocalRank": 1,
+        "unjudgedInTopK": 1,
+        "k": 10
+      }
+    },
+    {
+      "id": "dl-diabetic-retinopathy",
+      "m": {
+        "precisionAtK": 0.9,
+        "recallAtK": 1,
+        "ndcgAtK": 0.9139813829177023,
+        "reciprocalRank": 1,
+        "unjudgedInTopK": 0,
+        "k": 10
+      }
+    },
+    {
+      "id": "sglt2-heart-failure",
+      "m": {
+        "precisionAtK": 0.9,
+        "recallAtK": 1,
+        "ndcgAtK": 0.7603344330193106,
+        "reciprocalRank": 1,
+        "unjudgedInTopK": 0,
+        "k": 10
+      }
+    },
+    {
+      "id": "llm-clinical-notes",
+      "m": {
+        "precisionAtK": 0.2,
+        "recallAtK": 1,
+        "ndcgAtK": 0.42177340954886444,
+        "reciprocalRank": 0.2,
+        "unjudgedInTopK": 0,
+        "k": 10
+      }
+    },
+    {
+      "id": "exercise-depression-older",
+      "m": {
+        "precisionAtK": 0.8,
+        "recallAtK": 1,
+        "ndcgAtK": 0.9183206864868001,
+        "reciprocalRank": 1,
+        "unjudgedInTopK": 0,
+        "k": 10
+      }
+    }
+  ],
+  "planned": [],
+  "model": null
+}

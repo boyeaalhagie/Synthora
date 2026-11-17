@@ -1,0 +1,96 @@
+{
+  "name": "synthora-seed",
+  "description": "Seed evaluation set of clinical research questions across different evidence types (prediction models, diagnostic accuracy, drug trials, NLP, behavioural interventions). Relevance judgments are drafts until reviewed by a domain expert; see labelledBy on each question.",
+  "questions": [
+    {
+      "id": "ml-cvd-risk",
+      "question": "Machine learning models for predicting cardiovascular disease risk: which perform best and what are their limitations?",
+      "judgments": {
+        "pmid:41268668": 2,
+        "pmid:40036490": 2,
+        "pmid:42730155": 2,
+        "pmid:42442809": 0,
+        "pmid:42144637": 2,
+        "pmid:38277522": 0,
+        "pmid:42325156": 1,
+        "pmid:38725059": 0,
+        "pmid:37558487": 0,
+        "pmid:41957161": 0
+      },
+      "pending": [],
+      "labelledBy": "Draft labels by Claude (claude-opus-5-5) from titles and abstract snippets, 2026-11-16. Not yet reviewed by a domain expert."
+    },
+    {
+      "id": "dl-diabetic-retinopathy",
+      "question": "Diagnostic accuracy of deep learning for diabetic retinopathy screening from retinal photographs",
+      "judgments": {
+        "pmid:42952879": 2,
+        "pmid:36246896": 1,
+        "pmid:32088490": 2,
+        "doi:10.20944/preprints202609.2453.v1": 1,
+        "pmid:33435711": 2,
+        "pmid:30401899": 2,
+        "pmid:42647424": 0,
+        "pmid:33120397": 2,
+        "pmid:34407500": 2,
+        "pmid:41463639": 1
+      },
+      "pending": [],
+      "labelledBy": "Draft labels by Claude (claude-opus-5-5) from titles and abstract snippets, 2026-11-16. Not yet reviewed by a domain expert."
+    },
+    {
+      "id": "sglt2-heart-failure",
+      "question": "Effect of SGLT2 inhibitors on hospitalisation for heart failure in patients with type 2 diabetes",
+      "judgments": {
+        "pmid:32877652": 1,
+        "pmid:42786044": 1,
+        "pmid:36041474": 1,
+        "pmid:38768620": 2,
+        "pmid:42962450": 0,
+        "pmid:36351458": 1,
+        "pmid:42252454": 1,
+        "pmid:42521604": 1,
+        "pmid:38287703": 2,
+        "pmid:31535829": 1
+      },
+      "pending": [],
+      "labelledBy": "Draft labels by Claude (claude-opus-5-5) from titles and abstract snippets, 2026-11-16. Not yet reviewed by a domain expert."
+    },
+    {
+      "id": "llm-clinical-notes",
+      "question": "Large language models for summarising clinical notes: how is summary accuracy evaluated?",
+      "judgments": {
+        "pmid:42559854": 0,
+        "pmid:42461368": 0,
+        "pmid:42902234": 0,
+        "doi:10.64898/2026.02.02.26345346": 0,
+        "pmid:42771641": 1,
+        "pmid:42527557": 0,
+        "pmid:42020095": 0,
+        "pmid:42245290": 0,
+        "pmid:41698858": 1,
+        "pmid:42952284": 0
+      },
+      "pending": [],
+      "labelledBy": "Draft labels by Claude (claude-opus-5-5) from titles and abstract snippets, 2026-11-16. Not yet reviewed by a domain expert."
+    },
+    {
+      "id": "exercise-depression-older",
+      "question": "Effectiveness of exercise interventions for depression in older adults",
+      "judgments": {
+        "pmid:34264835": 2,
+        "pmid:42823701": 1,
+        "pmid:30642326": 2,
+        "pmid:42741013": 2,
+        "pmid:39903465": 1,
+        "pmid:42869428": 0,
+        "pmid:37704052": 2,
+        "pmid:42656656": 1,
+        "pmid:42964384": 1,
+        "pmid:39500251": 0
+      },
+      "pending": [],
+      "labelledBy": "Draft labels by Claude (claude-opus-5-5) from titles and abstract snippets, 2026-11-16. Not yet reviewed by a domain expert."
+    }
+  ]
+}
