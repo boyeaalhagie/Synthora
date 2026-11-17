@@ -1,0 +1,17 @@
+{
+  "name": "synthora",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "dev:worker": "npm run dev --workspace @synthora/worker"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

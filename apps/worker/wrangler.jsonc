@@ -1,0 +1,15 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "synthora-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "vars": {
+    // Contact address NCBI asks E-utilities clients to send. Set your own in .dev.vars / dashboard.
+    "NCBI_EMAIL": ""
+  }
+  // Secrets (set with `wrangler secret put`, never committed):
+  //   NCBI_API_KEY — optional; raises the NCBI rate limit from 3 to 10 requests/second.
+  // User LLM keys are NEVER configured here. They arrive per request (BYOK) and are not stored.
+}

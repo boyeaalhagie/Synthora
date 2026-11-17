@@ -1,0 +1,8 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    // Tests run under Node (vitest); the worker source only sees Workers types.
+    "types": ["@cloudflare/workers-types", "node"]
+  },
+  "include": [".", "../src"]
+}
