@@ -15,6 +15,7 @@ Synthora is a research-support tool. It does not diagnose and does not replace c
 ## Repository layout
 
 ```
+apps/web/           Web app (React, Vite, Tailwind); proxies /api to the worker in development
 apps/worker/        Cloudflare Worker: API and research pipeline (TypeScript)
   src/lib/          HTTP retry/rate limiting, text + identifier normalisation
   src/literature/   PubMed and Europe PMC clients, deduplication, search
@@ -29,12 +30,24 @@ Requires Node 20+.
 
 ```sh
 npm install
+npm run dev        # starts the worker (:8787) and the web app (:5173) together
+```
+
+Open http://localhost:5173, then:
+
+1. Click **Connect** and enter your Anthropic, OpenAI or Gemini key. It is verified, and you choose a model.
+2. Ask a research question (or pick an example), choose how many papers to extract, and press **Run**.
+3. Read the report on the right. Click any evidence chip (`E5`) to see the exact quote a claim rests on. The **Verifier** card lists everything that failed verification.
+
+Your key stays in the browser tab's memory. Reloading the page disconnects.
+
+Other commands:
+
+```sh
 npm run typecheck
 npm test
-
-# Run the worker locally (http://127.0.0.1:8787)
-cp apps/worker/.dev.vars.example apps/worker/.dev.vars   # set NCBI_EMAIL
-npm run dev:worker
+npm run dev:worker   # API only
+cp apps/worker/.dev.vars.example apps/worker/.dev.vars   # optional: set NCBI_EMAIL / NCBI_API_KEY
 ```
 
 Try a search:
@@ -71,22 +84,64 @@ How keys are handled (`apps/worker/src/providers/`):
 - A new adapter is created for each request and never cached or shared between users.
 - OpenAI calls set `store: false`, so research content isn't kept in the user's OpenAI account.
 
+### Search and extract (end-to-end preview)
+
+Runs search → rank → extraction for the top papers with your own key:
+
+```sh
+curl -X POST http://127.0.0.1:8787/api/research/preview \
+  -H 'content-type: application/json' \
+  -H 'x-provider-key: <your key>' \
+  -d '{"query": "machine learning cardiovascular risk prediction", "provider": "anthropic", "model": "claude-opus-5-5", "topN": 3}'
+```
+
+For each paper, the extraction agent (`apps/worker/src/agents/extraction/`) pulls out the objective, study design, population, sample size, dataset, methods, findings with metrics, and limitations. Every item must carry a verbatim quote from the title or abstract, and plain code checks each quote against the source:
+
+- **Quote not found in the paper** (or shorter than 8 characters) → the item is rejected.
+- **Sample size or metric value not inside its quote** → the item is rejected.
+- **Rejected items** are returned under `rejected` with a reason, so hallucinations are counted rather than hidden.
+- **Prompt injection:** paper text is wrapped as data, and the prompt tells the model to ignore any instructions inside it.
+
+The check proves that the quoted text exists in the paper. It does not prove the summarised `value` matches the quote; that is the citation-verification stage's job.
+
+The evidence analysis agent (`apps/worker/src/agents/analysis/`) then compares the verified evidence across papers. The result is under `analysis`:
+
+- **Deterministic, no LLM:**
+  - an evidence catalog that gives every verified item an id (`E1`, `E2`, …),
+  - a per-study comparison table (design, sample size, dataset, methods, metrics),
+  - metrics grouped by name across studies (AUC synonyms merged, sorted by value).
+- **From the model:** `findings`, `agreements`, `conflicts` and `gaps`. Each claim must cite evidence ids. A claim that cites an unknown id is rejected, and agreements and conflicts must cite at least two different papers. Rejected claims are listed with reasons.
+- **If the model step fails,** the deterministic tables are still returned.
+
+Citation verification (`apps/worker/src/agents/verification/`) then runs two checks:
+
+- **Paper records (no LLM):**
+  - Each DOI is looked up in Crossref, and the registered title is compared with the source record: `match`, `mismatch`, or `not_in_crossref` (some DOIs are registered elsewhere, so this is not proof of a bad DOI).
+  - Papers PubMed marks as retracted are flagged.
+  - These checks run alongside the model steps.
+- **Claim support (one LLM call):** a reviewer prompt judges whether each claim's cited quotes actually support it: `supported`, `partially_supported` or `unsupported`, with a reason.
+  - Unsupported claims are dropped from the report and listed in the Verifier card.
+  - The reviewer is currently the same model that wrote the claims, so treat it as a check, not independent confirmation.
+
 ### Configuration
 
 | Variable       | Kind   | Purpose                                                                 |
 | -------------- | ------ | ----------------------------------------------------------------------- |
 | `NCBI_EMAIL`   | var    | Contact address NCBI asks E-utilities clients to send (operator's own). |
 | `NCBI_API_KEY` | secret | Optional. Raises the NCBI limit from 3 to 10 requests/second.           |
+| `CROSSREF_MAILTO` | var | Optional operator contact; puts Crossref lookups in its faster polite pool. |
 
 ## Roadmap
 
 1. ~~Literature discovery: PubMed + Europe PMC, normalisation, deduplication~~
 2. ~~Relevance ranking of retrieved papers (lexical; semantic ranking to follow with BYOK)~~
 3. ~~BYOK provider adapters (OpenAI, Anthropic, Gemini) with key verification~~
-4. Paper extraction agent with schema-validated output
-5. Evidence analysis, citation verification (Crossref), report synthesis
-6. Durable orchestration (Cloudflare Workflows) with SSE progress
-7. Web app
-8. Evaluation suite (retrieval precision/recall, citation accuracy, hallucination rate)
+4. ~~Paper extraction agent with schema-validated, quote-verified output~~
+5. ~~Evidence analysis (cross-paper comparison with cited claims)~~
+6. ~~Citation verification (Crossref record checks, retraction flags, claim support review)~~
+7. Report synthesis (narrative report with citations; Markdown/PDF export)
+8. Durable orchestration (Cloudflare Workflows) with live progress in the UI
+9. ~~Web app (preview)~~
+10. Evaluation suite (retrieval precision/recall, citation accuracy, hallucination rate)
 
 The original long-form plan is in [docs/blueprint.md](docs/blueprint.md); architecture decisions are in [docs/decisions](docs/decisions).

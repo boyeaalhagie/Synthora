@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+/* Design tokens. Components use these via Tailwind utilities (bg-surface, text-muted, …). */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Source Serif 4", ui-serif, Georgia, serif;
+
+  --color-canvas: #e9eee4;
+  --color-surface: #ffffff;
+  --color-sunken: #f5f6f2;
+  --color-line: #e2e5dc;
+  --color-ink: #1d2320;
+  --color-muted: #5f6a63;
+  --color-faint: #8d978f;
+  --color-accent: #c8643c;
+  --color-accent-ink: #ffffff;
+  --color-ok: #2f7d4f;
+  --color-ok-soft: #e5f2ea;
+  --color-warn: #8a5a00;
+  --color-warn-soft: #fbf1dc;
+  --color-warn-line: #ecd6a6;
+  --color-bad: #a3362a;
+  --color-bad-soft: #f9e6e2;
+  --color-chip: #eef1ea;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-canvas: #151a17;
+    --color-surface: #1d2420;
+    --color-sunken: #232b26;
+    --color-line: #313b35;
+    --color-ink: #e7ece8;
+    --color-muted: #a6b0a9;
+    --color-faint: #7c8780;
+    --color-accent: #e07b52;
+    --color-ok: #6cc293;
+    --color-ok-soft: #1f3328;
+    --color-warn: #e8bf6a;
+    --color-warn-soft: #33291a;
+    --color-warn-line: #574627;
+    --color-bad: #f08b7d;
+    --color-bad-soft: #3a2320;
+    --color-chip: #2a332d;
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
