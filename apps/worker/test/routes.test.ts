@@ -230,6 +230,7 @@ describe("POST /api/research/preview", () => {
     // The stub extractions contain no evidence, so analysis and claim review are skipped without model calls.
     expect(body.analysis).toEqual({ status: "skipped", reason: "no_evidence" });
     expect(body.verification.claims).toEqual({ status: "skipped", reason: "no_claims" });
+    expect(body.report).toEqual({ status: "skipped", reason: "no_analysis" });
     // Record checks still run for every selected paper (the stub papers have no DOI).
     expect(body.verification.papers.map((c) => [c.paperId, c.crossref])).toEqual([
       ["pmid:1", "no_doi"],

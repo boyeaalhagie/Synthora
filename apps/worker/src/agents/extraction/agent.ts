@@ -15,6 +15,10 @@ export interface ExtractOptions {
 export interface ExtractManyOptions extends ExtractOptions {
   /** Papers processed in parallel. Kept low because it spends the user's rate limit. */
   concurrency?: number;
+  /** Called after each paper finishes, with the number finished so far. */
+  onProgress?: (completed: number, total: number) => void;
+  /** Checked before each paper; when true, remaining papers are not sent (e.g. the client went away). */
+  shouldStop?: () => boolean;
 }
 
 const DEFAULTS = { maxOutputTokens: 8_000, maxAttempts: 2, concurrency: 3 };
@@ -75,21 +79,38 @@ export async function extractPapers(
 ): Promise<ExtractionResult[]> {
   const results: ExtractionResult[] = new Array(papers.length);
   let next = 0;
+  let completed = 0;
   let fatal: ExtractionResult | undefined;
+
+  const finish = (index: number, result: ExtractionResult) => {
+    results[index] = result;
+    options.onProgress?.(++completed, papers.length);
+  };
 
   const worker = async () => {
     while (next < papers.length) {
       const index = next++;
       const paper = papers[index]!;
       if (fatal?.status === "failed") {
-        results[index] = { ...fatal, paperId: paper.id, attempts: 0, usage: { inputTokens: 0, outputTokens: 0 } };
+        finish(index, { ...fatal, paperId: paper.id, attempts: 0, usage: { inputTokens: 0, outputTokens: 0 } });
+        continue;
+      }
+      if (options.shouldStop?.()) {
+        finish(index, {
+          status: "failed",
+          paperId: paper.id,
+          reason: "provider_error",
+          message: "Not processed: the run was cancelled.",
+          attempts: 0,
+          usage: { inputTokens: 0, outputTokens: 0 },
+        });
         continue;
       }
       const result = await extractPaper(paper, adapter, options);
       if (result.status === "failed" && result.providerErrorKind && FATAL_PROVIDER_ERRORS.has(result.providerErrorKind)) {
         fatal ??= result;
       }
-      results[index] = result;
+      finish(index, result);
     }
   };
 

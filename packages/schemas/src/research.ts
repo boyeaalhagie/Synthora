@@ -3,6 +3,7 @@ import { EvidenceAnalysisResult } from "./analysis.js";
 import { ExtractionResult } from "./extraction.js";
 import { RankedPaper, SourceSearchOutcome } from "./literature.js";
 import { LlmProvider } from "./provider.js";
+import { ResearchReport } from "./report.js";
 import { VerificationResult } from "./verification.js";
 
 /** Provisional single-request pipeline: search, rank, extract the top papers, then analyse across them. */
@@ -22,6 +23,7 @@ export const ResearchPreviewResult = z.object({
   extractions: z.array(ExtractionResult),
   analysis: EvidenceAnalysisResult,
   verification: VerificationResult,
+  report: ResearchReport,
   /** Total tokens across extraction and analysis. */
   usage: z.object({ inputTokens: z.number().int().nonnegative(), outputTokens: z.number().int().nonnegative() }),
 });

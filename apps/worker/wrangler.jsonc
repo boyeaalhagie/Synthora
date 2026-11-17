@@ -5,6 +5,8 @@
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
+  // The web app's dev proxy targets this port, so pin it rather than let wrangler pick another when it is busy.
+  "dev": { "port": 8787 },
   "vars": {
     // Contact address NCBI asks E-utilities clients to send. Set your own in .dev.vars / dashboard.
     "NCBI_EMAIL": ""

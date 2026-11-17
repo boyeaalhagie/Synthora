@@ -10,24 +10,19 @@ import type {
   VerifiedClaim,
 } from "@synthora/schemas";
 import { useMemo, useState, type ReactNode } from "react";
-import { formatNumber, humanize, paperLinks, shortAuthors, studyLabel } from "../lib/format.js";
+import { formatNumber, humanize, shortAuthors, studyLabel } from "../lib/format.js";
+import { EvidenceCard, ExternalLinks, StudyTable, type Lookup } from "./report-shared.js";
+import { ReportDocument } from "./ReportDocument.js";
 import { Badge, Icon } from "./ui.js";
 
-type Tab = "analysis" | "studies" | "metrics" | "papers";
+type Tab = "report" | "analysis" | "studies" | "metrics" | "papers";
 const TABS: Array<{ id: Tab; label: string }> = [
-  { id: "analysis", label: "Analysis" },
+  { id: "report", label: "Report" },
+  { id: "analysis", label: "Claims" },
   { id: "studies", label: "Studies" },
   { id: "metrics", label: "Metrics" },
   { id: "papers", label: "Papers" },
 ];
-
-interface Lookup {
-  evidence: Map<string, EvidenceItem>;
-  papers: Map<string, RankedPaper>;
-  checks: Map<string, PaperCheck>;
-  /** "findings:0" -> the reviewer's verdict on that claim. */
-  assessments: Map<string, ClaimAssessment>;
-}
 
 const VERDICT_BADGE: Record<ClaimAssessment["verdict"], { tone: "ok" | "warn" | "bad" | "neutral"; label: string }> = {
   supported: { tone: "ok", label: "Supported" },
@@ -50,34 +45,6 @@ function RecordBadges({ check }: { check: PaperCheck | undefined }) {
       {check.crossref === "not_in_crossref" && <Badge>DOI not in Crossref</Badge>}
       {check.crossref === "error" && <Badge>Crossref unavailable</Badge>}
     </>
-  );
-}
-
-function ExternalLinks({ paper }: { paper: RankedPaper }) {
-  return (
-    <span className="inline-flex flex-wrap gap-2">
-      {paperLinks(paper).map((link) => (
-        <a key={link.label} href={link.href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-accent hover:underline">
-          {link.label} <Icon name="external" />
-        </a>
-      ))}
-    </span>
-  );
-}
-
-function EvidenceCard({ item, lookup }: { item: EvidenceItem; lookup: Lookup }) {
-  const paper = lookup.papers.get(item.paperId);
-  return (
-    <div className="rounded-lg border border-line bg-sunken p-3 text-sm">
-      <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
-        <span className="font-mono font-medium text-ink">{item.id}</span>
-        <span>{paper ? studyLabel(paper) : item.paperId}</span>
-        <span>· {humanize(item.field)}</span>
-        {paper && <ExternalLinks paper={paper} />}
-      </p>
-      <p className="mt-1">{item.value}</p>
-      <blockquote className="mt-2 border-l-2 border-accent/50 pl-3 text-muted">“{item.quote}”</blockquote>
-    </div>
   );
 }
 
@@ -163,52 +130,7 @@ function AnalysisTab({ result, lookup }: { result: ResearchPreviewResult; lookup
 function StudiesTab({ result, lookup }: { result: ResearchPreviewResult; lookup: Lookup }) {
   const studies = result.analysis.status === "skipped" ? [] : result.analysis.studies;
   if (studies.length === 0) return <Empty>No studies were extracted.</Empty>;
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[40rem] border-collapse text-left text-sm">
-        <thead className="text-xs text-faint">
-          <tr className="border-b border-line">
-            {["Study", "Design", "N", "Dataset", "Methods", "Reported metrics"].map((h) => (
-              <th key={h} className="px-2 py-2 font-medium">
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {studies.map((s) => {
-            const paper = lookup.papers.get(s.paperId);
-            return (
-              <tr key={s.paperId} className="border-b border-line align-top">
-                <td className="px-2 py-2">
-                  <p className="font-medium">{s.label}</p>
-                  {lookup.checks.get(s.paperId)?.retracted && <Badge tone="bad">Retracted</Badge>}
-                  {paper && <ExternalLinks paper={paper} />}
-                </td>
-                <td className="px-2 py-2">{s.design ? humanize(s.design) : <Dash />}</td>
-                <td className="px-2 py-2 tabular-nums">{s.sampleSize !== undefined ? formatNumber(s.sampleSize) : <Dash />}</td>
-                <td className="px-2 py-2">{s.dataset ?? <Dash />}</td>
-                <td className="px-2 py-2">{s.methods.length ? s.methods.join(", ") : <Dash />}</td>
-                <td className="px-2 py-2">
-                  {s.metrics.length ? (
-                    <ul>
-                      {s.metrics.map((m, i) => (
-                        <li key={i}>
-                          {m.name}: <span className="tabular-nums">{m.value}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <Dash />
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
+  return <StudyTable studies={studies} lookup={lookup} />;
 }
 
 function MetricsTab({ result, lookup }: { result: ResearchPreviewResult; lookup: Lookup }) {
@@ -343,7 +265,7 @@ const Dash = () => <span className="text-faint">—</span>;
 const Empty = ({ children }: { children: ReactNode }) => <p className="rounded-lg bg-sunken px-4 py-6 text-center text-sm text-muted">{children}</p>;
 
 export function ReportPanel({ result, query }: { result: ResearchPreviewResult; query: string }) {
-  const [tab, setTab] = useState<Tab>("analysis");
+  const [tab, setTab] = useState<Tab>(result.report.status === "written" ? "report" : "analysis");
   const lookup = useMemo<Lookup>(
     () => ({
       evidence: new Map(result.analysis.status === "skipped" ? [] : result.analysis.evidence.map((e) => [e.id, e])),
@@ -390,6 +312,7 @@ export function ReportPanel({ result, query }: { result: ResearchPreviewResult; 
         </nav>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+        {tab === "report" && <ReportDocument report={result.report} lookup={lookup} />}
         {tab === "analysis" && <AnalysisTab result={result} lookup={lookup} />}
         {tab === "studies" && <StudiesTab result={result} lookup={lookup} />}
         {tab === "metrics" && <MetricsTab result={result} lookup={lookup} />}

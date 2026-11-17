@@ -22,6 +22,13 @@
   --color-bad: #a3362a;
   --color-bad-soft: #f9e6e2;
   --color-chip: #eef1ea;
+
+  /* The mascot */
+  --color-bot: #d9774f;
+  --color-bot-light: #f3b08f;
+  --color-bot-ink: #2a1a14;
+  --color-bot-blush: #e8566f;
+  --color-bot-shadow: rgb(29 35 32 / 0.16);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -42,6 +49,7 @@
     --color-bad: #f08b7d;
     --color-bad-soft: #3a2320;
     --color-chip: #2a332d;
+    --color-bot-shadow: rgb(0 0 0 / 0.4);
   }
 }
 
@@ -56,6 +64,26 @@ body {
   color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+}
+
+/* Printing shows only the clean report document, never the app around it. */
+.print-only {
+  display: none;
+}
+
+@media print {
+  .screen-only {
+    display: none !important;
+  }
+  .print-only {
+    display: block;
+  }
+  html,
+  body,
+  #root {
+    height: auto;
+    background: #ffffff;
+  }
 }
 
 :focus-visible {

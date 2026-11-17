@@ -1,8 +1,11 @@
-import type { ExtractionResult, RejectedClaim, RejectedItem, ResearchPreviewResult } from "@synthora/schemas";
+import type { ExtractionResult, RejectedClaim, RejectedItem, RejectedSentence, ResearchPreviewResult } from "@synthora/schemas";
 import { useEffect, useState, type ReactNode } from "react";
+import { AiBot } from "../bot/AiBot.js";
+import type { AiBotEmotion, AiBotMotion } from "../bot/engine.js";
 import { formatDuration, formatNumber, humanize, studyLabel } from "../lib/format.js";
-import { PROVIDER_LABELS, type Run } from "../lib/types.js";
-import { Badge, Button, Icon, Spinner } from "./ui.js";
+import { PROVIDER_LABELS, STEPS, type Run } from "../lib/types.js";
+import { ProgressChecklist } from "./ProgressChecklist.js";
+import { Badge, Button, Icon } from "./ui.js";
 
 const EXTRACTION_REJECTION: Record<RejectedItem["reason"], string> = {
   quote_too_short: "quote too short to verify",
@@ -14,6 +17,12 @@ const EXTRACTION_REJECTION: Record<RejectedItem["reason"], string> = {
 const CLAIM_REJECTION: Record<RejectedClaim["reason"], string> = {
   unknown_evidence: "cites evidence that does not exist",
   needs_multiple_papers: "comparison drawn from a single paper",
+};
+
+const SENTENCE_REJECTION: Record<RejectedSentence["reason"], string> = {
+  no_evidence: "cites no evidence",
+  unknown_evidence: "cites evidence that does not exist or was excluded",
+  number_not_in_evidence: "states a number its evidence does not contain",
 };
 
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
@@ -70,6 +79,14 @@ function claimSummary(result: ResearchPreviewResult): string {
   if (review.status === "failed") return `Claim review failed: ${review.message}`;
   const by = (v: string) => review.assessments.filter((a) => a.verdict === v).length;
   return `Claims reviewed against their quotes: ${by("supported")} supported, ${by("partially_supported")} partially supported, ${by("unsupported")} unsupported${by("not_assessed") ? `, ${by("not_assessed")} not reviewed` : ""}.`;
+}
+
+function reportSummary(result: ResearchPreviewResult): string {
+  const report = result.report;
+  if (report.status === "skipped") return report.reason === "no_analysis" ? "Skipped: nothing was analysed." : "Skipped: no claims survived review.";
+  if (report.status === "failed") return `Failed: ${report.message}`;
+  const written = report.sections.filter((s) => !s.generated).reduce((n, s) => n + s.paragraphs.flat().length, 0);
+  return `${count(written, "cited sentence")} written, citing ${count(report.references.length, "paper")}${report.rejected.length ? `; ${count(report.rejected.length, "sentence")} removed by verification` : ""}.`;
 }
 
 function Steps({ result, elapsed }: { result: ResearchPreviewResult; elapsed: number }) {
@@ -137,6 +154,10 @@ function Steps({ result, elapsed }: { result: ResearchPreviewResult; elapsed: nu
             <li>{claimSummary(result)}</li>
           </ul>
         </li>
+        <li>
+          <p className="font-medium">5. Report synthesis</p>
+          <p className="mt-1 text-muted">{reportSummary(result)}</p>
+        </li>
       </ol>
     </Collapsible>
   );
@@ -153,7 +174,8 @@ function Verifier({ result }: { result: ResearchPreviewResult }) {
       ? review.assessments.filter((a) => a.verdict === "unsupported").map((a) => ({ a, claim: analysis[a.section][a.index] }))
       : [];
   const records = result.verification.papers.filter((c) => c.retracted || c.crossref === "mismatch");
-  const total = items.length + claims.length + unsupported.length + records.length;
+  const sentences = result.report.status === "written" ? result.report.rejected : [];
+  const total = items.length + claims.length + unsupported.length + records.length + sentences.length;
 
   if (total === 0) {
     return (
@@ -183,6 +205,15 @@ function Verifier({ result }: { result: ResearchPreviewResult }) {
                 </span>
               </p>
               {c.crossref === "mismatch" && c.crossrefTitle && <p className="mt-1 text-xs text-muted">Crossref title: “{c.crossrefTitle}”</p>}
+            </li>
+          ))}
+          {sentences.map((s, i) => (
+            <li key={`s${i}`}>
+              <p>
+                <span className="font-medium">Report sentence</span> ({humanize(s.section)}):{" "}
+                <span className="text-warn">{SENTENCE_REJECTION[s.reason]}{s.detail ? ` (${s.detail})` : ""}</span>
+              </p>
+              <p className="mt-1 text-xs text-muted">{s.sentence.text}</p>
             </li>
           ))}
           {unsupported.map(({ a, claim }, i) => (
@@ -218,6 +249,25 @@ function Verifier({ result }: { result: ResearchPreviewResult }) {
   );
 }
 
+const finishedSteps = (run: Run) => STEPS.filter((s) => ["done", "skipped", "failed"].includes(run.progress.steps[s].status)).length;
+
+/** The bot mirrors the run: pondering while it works, a hop per finished step, joy, disappointment or a nap at the end. */
+function StatusBot({ run }: { run: Run }) {
+  const steps = finishedSteps(run);
+  const emotion: AiBotEmotion =
+    run.status === "running" ? "thinking" : run.status === "done" ? "happy" : run.status === "error" ? "sad" : "sleepy";
+  const motion: AiBotMotion | null = run.status === "running" ? (steps > 0 ? "bounce" : null) : run.status === "done" ? "jump" : null;
+  const label =
+    run.status === "running"
+      ? `Synthora is working: ${steps} of ${STEPS.length} steps finished`
+      : run.status === "done"
+        ? "Synthora finished the research"
+        : run.status === "error"
+          ? "Synthora could not finish the research"
+          : "The research was cancelled";
+  return <AiBot size={56} label={label} emotion={emotion} motion={motion} motionKey={steps} shape="pebble" lookAround={false} />;
+}
+
 function Running({ run, onCancel }: { run: Extract<Run, { status: "running" }>; onCancel: () => void }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -225,18 +275,22 @@ function Running({ run, onCancel }: { run: Extract<Run, { status: "running" }>; 
     return () => clearInterval(timer);
   }, []);
   return (
-    <div className="flex items-start gap-3 rounded-xl border border-line bg-surface px-4 py-3 text-sm">
-      <Spinner className="mt-0.5 text-accent" />
-      <div className="flex-1">
-        <p className="font-medium">Running · {formatDuration(now - run.startedAt)}</p>
-        <p className="mt-1 text-muted">
-          Searching PubMed and Europe PMC, extracting the top {run.topN} papers with {PROVIDER_LABELS[run.provider]} ({run.model}), then analysing
-          across them. This usually takes one to three minutes. Step details appear when the run finishes.
-        </p>
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-3">
+        <StatusBot run={run} />
+        <div className="flex-1 text-sm">
+          <p className="font-medium" aria-live="polite">
+            Working · {formatDuration(now - run.startedAt)}
+          </p>
+          <p className="text-muted">
+            {PROVIDER_LABELS[run.provider]} · {run.model}. Usually one to three minutes.
+          </p>
+        </div>
+        <Button variant="ghost" onClick={onCancel}>
+          <Icon name="stop" /> Cancel
+        </Button>
       </div>
-      <Button variant="ghost" onClick={onCancel}>
-        <Icon name="stop" /> Cancel
-      </Button>
+      <ProgressChecklist progress={run.progress} topN={run.topN} />
     </div>
   );
 }
@@ -249,19 +303,32 @@ export function Thread({ run, onCancel }: { run: Run; onCancel: () => void }) {
       {run.status === "running" && <Running run={run} onCancel={onCancel} />}
 
       {(run.status === "error" || run.status === "cancelled") && (
-        <p role="alert" className={`flex items-start gap-2 rounded-xl px-4 py-3 text-sm ${run.status === "error" ? "bg-bad-soft text-bad" : "bg-sunken text-muted"}`}>
-          <Icon name={run.status === "error" ? "alert" : "stop"} className="mt-0.5" />
-          {run.message}
-        </p>
+        <>
+          <div className="flex items-center gap-3">
+            <StatusBot run={run} />
+            <p role="alert" className={`flex flex-1 items-start gap-2 rounded-xl px-4 py-3 text-sm ${run.status === "error" ? "bg-bad-soft text-bad" : "bg-sunken text-muted"}`}>
+              <Icon name={run.status === "error" ? "alert" : "stop"} className="mt-0.5" />
+              {run.message}
+            </p>
+          </div>
+          <ProgressChecklist progress={run.progress} topN={run.topN} />
+        </>
       )}
 
       {run.status === "done" && (
         <>
+          <div className="flex items-center gap-3">
+            <StatusBot run={run} />
+            <p className="text-sm">
+              <span className="font-medium">Done in {formatDuration(run.finishedAt - run.startedAt)}.</span>{" "}
+              <span className="text-muted">The report is ready on the right.</span>
+            </p>
+          </div>
           <Steps result={run.result} elapsed={run.finishedAt - run.startedAt} />
           <Verifier result={run.result} />
           <p className="text-sm text-muted">
-            The report is on the right. Every claim links to the quote it rests on — click an evidence chip to read it, and check the source before relying
-            on a finding.
+            Every sentence in the report links to the quotes it rests on. Click a citation to read them, and check the source before relying on a
+            finding.
           </p>
         </>
       )}

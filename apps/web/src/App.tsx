@@ -1,11 +1,13 @@
 import { useRef, useState } from "react";
 import { Composer } from "./components/Composer.js";
 import { ConnectDialog } from "./components/ConnectDialog.js";
+import { PrintReport } from "./components/ReportDocument.js";
 import { ReportPanel } from "./components/ReportPanel.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { Thread } from "./components/Thread.js";
-import { ApiError, runPreview } from "./lib/api.js";
-import type { Connection, Run } from "./lib/types.js";
+import { AiBot } from "./bot/AiBot.js";
+import { ApiError, runPreviewStream } from "./lib/api.js";
+import { applyProgress, initialProgress, type Connection, type Run } from "./lib/types.js";
 
 export function App() {
   // The key lives only here, in memory. Nothing in this app persists it.
@@ -26,20 +28,26 @@ export function App() {
     const base = { id, query, topN, provider: connection.provider, model: connection.model, startedAt: Date.now() };
     const controller = new AbortController();
     controllers.current.set(id, controller);
-    setRuns((all) => [...all, { ...base, status: "running" }]);
+    setRuns((all) => [...all, { ...base, status: "running", progress: initialProgress() }]);
     setActiveId(id);
 
     try {
-      const result = await runPreview({ query, provider: connection.provider, model: connection.model, topN }, connection.key, controller.signal);
-      update(id, () => ({ ...base, status: "done", finishedAt: Date.now(), result }));
+      const result = await runPreviewStream(
+        { query, provider: connection.provider, model: connection.model, topN },
+        connection.key,
+        (event) => update(id, (run) => ({ ...run, progress: applyProgress(run.progress, event) })),
+        controller.signal,
+      );
+      update(id, (run) => ({ ...base, progress: run.progress, status: "done", finishedAt: Date.now(), result }));
     } catch (err) {
       const cancelled = err instanceof DOMException && err.name === "AbortError";
-      update(id, () => ({
+      update(id, (run) => ({
         ...base,
+        progress: run.progress,
         status: cancelled ? "cancelled" : "error",
         finishedAt: Date.now(),
         message: cancelled
-          ? "Cancelled. Calls already sent to the provider may still complete and be billed."
+          ? "Cancelled. The server stops before its next model call; a call already in flight may still be billed."
           : err instanceof ApiError
             ? err.message
             : "Something went wrong while running this research.",
@@ -49,8 +57,16 @@ export function App() {
     }
   }
 
+  const printable = active?.status === "done" && active.result.report.status === "written" ? active.result.report : null;
+
   return (
-    <div className="flex min-h-full flex-col gap-3 p-3 lg:h-full lg:flex-row">
+    <>
+    {printable && (
+      <div className="print-only">
+        <PrintReport report={printable} />
+      </div>
+    )}
+    <div className="screen-only flex min-h-full flex-col gap-3 p-3 lg:h-full lg:flex-row">
       <Sidebar
         runs={runs}
         activeRunId={activeId}
@@ -69,7 +85,8 @@ export function App() {
                 <Thread run={active} onCancel={() => controllers.current.get(active.id)?.abort()} />
               </>
             ) : (
-              <div className="mx-auto flex max-w-xl flex-col gap-3 pt-[10vh]">
+              <div className="mx-auto flex max-w-xl flex-col gap-3 pt-[8vh]">
+                <AiBot size={88} label="Synthora" emotion={connection ? "happy" : "neutral"} followCursor className="-ml-2" />
                 <h2 className="font-serif text-3xl font-semibold tracking-tight">What would you like to research?</h2>
                 <p className="text-sm text-muted">
                   Synthora searches PubMed and Europe PMC, extracts each top paper with your model, verifies every extracted quote against the
@@ -98,5 +115,6 @@ export function App() {
         />
       )}
     </div>
+    </>
   );
 }

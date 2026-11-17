@@ -1,21 +1,19 @@
 import {
   LiteratureSearchRequest,
+  NDJSON,
   ResearchPreviewRequest,
   VerifyProviderRequest,
-  type ResearchPreviewResult,
+  type ProgressEvent,
   type VerifyProviderResult,
 } from "@synthora/schemas";
-import { analyzeEvidence } from "./agents/analysis/agent.js";
-import { extractPapers } from "./agents/extraction/agent.js";
-import { assessClaimSupport } from "./agents/verification/agent.js";
-import { checkPapers, type CrossrefLookup } from "./agents/verification/records.js";
 import { CrossrefClient } from "./literature/crossref.js";
 import { MinIntervalLimiter, type FetchFn } from "./lib/http.js";
 import { EuropePmcClient } from "./literature/europepmc.js";
 import { PubMedClient } from "./literature/pubmed.js";
 import { searchLiterature } from "./literature/search.js";
 import type { LiteratureClient } from "./literature/types.js";
-import { ApiKey, createAdapter, ProviderError, PROVIDER_KEY_HEADER, type AdapterFactory } from "./providers/index.js";
+import { ApiKey, createAdapter, ProviderError, PROVIDER_KEY_HEADER } from "./providers/index.js";
+import { runResearch, type PipelineDeps, type PipelineParams } from "./research/pipeline.js";
 
 export interface Env {
   NCBI_EMAIL?: string;
@@ -24,11 +22,7 @@ export interface Env {
   CROSSREF_MAILTO?: string;
 }
 
-export interface Deps {
-  literatureClients: readonly LiteratureClient[];
-  createAdapter: AdapterFactory;
-  crossref: CrossrefLookup;
-}
+export type Deps = PipelineDeps;
 
 const MAX_BODY_BYTES = 16 * 1024;
 
@@ -154,52 +148,46 @@ async function researchPreview(request: Request, deps: Deps): Promise<Response> 
   if (!body.ok) return body.response;
   const parsed = ResearchPreviewRequest.safeParse(body.value);
   if (!parsed.success) return invalidRequest(parsed.error.issues);
-  const { query, provider, model, topN } = parsed.data;
 
-  const search = await searchLiterature(
-    { query, limitPerSource: 25, sources: ["pubmed", "europepmc"] },
-    deps.literatureClients,
-  );
-  if (search.outcomes.every((o) => o.status === "error")) {
-    return json({ error: "Literature search failed", outcomes: search.outcomes }, 502, noStore);
-  }
+  if (request.headers.get("accept")?.includes(NDJSON)) return streamResearch(parsed.data, key, deps);
 
-  // Papers without abstracts cannot be extracted; take the best-ranked ones that have one.
-  const papers = search.papers.filter((p) => p.abstract).slice(0, topN);
-  const adapter = deps.createAdapter(provider, key);
+  const outcome = await runResearch(parsed.data, key, deps, { emit: () => {}, isCancelled: () => false });
+  if (!outcome.ok) return json({ error: outcome.error, ...(outcome.outcomes && { outcomes: outcome.outcomes }) }, outcome.status, noStore);
+  return json(outcome.result, 200, noStore);
+}
 
-  // Record checks (Crossref, retraction flags) need no model, so they run
-  // alongside the model steps instead of after them.
-  const recordChecks = checkPapers(papers, deps.crossref);
+/**
+ * Streams progress events as NDJSON while the pipeline runs, ending with a
+ * `result` or `error` event. If the client disconnects (writes start to
+ * fail), the pipeline stops before its next model call so a cancelled run
+ * does not keep spending the user's tokens.
+ */
+function streamResearch(params: PipelineParams, key: ApiKey, deps: Deps): Response {
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+  const writer = writable.getWriter();
+  const encoder = new TextEncoder();
+  let disconnected = false;
 
-  const extractions = await extractPapers(papers, adapter, { model });
-
-  // Analysis sees only verified evidence. With none (e.g. the key was
-  // rejected during extraction) it is skipped without a model call.
-  const extracted = extractions.flatMap((e, i) =>
-    e.status === "extracted" ? [{ paper: papers[i]!, extraction: e.extraction }] : [],
-  );
-  const analysis = await analyzeEvidence(query, extracted, adapter, { model });
-  const claims = await assessClaimSupport(analysis, papers, adapter, { model });
-  const verification = { papers: await recordChecks, claims };
-
-  const usage = { inputTokens: 0, outputTokens: 0 };
-  for (const step of [...extractions, analysis, claims]) {
-    if (step.status === "skipped") continue;
-    usage.inputTokens += step.usage.inputTokens;
-    usage.outputTokens += step.usage.outputTokens;
-  }
-
-  const result: ResearchPreviewResult = {
-    query,
-    search: { outcomes: search.outcomes, totalRetrieved: search.totalRetrieved },
-    papers,
-    extractions,
-    analysis,
-    verification,
-    usage,
+  const emit = (event: ProgressEvent) => {
+    if (disconnected) return;
+    writer.write(encoder.encode(`${JSON.stringify(event)}\n`)).catch(() => {
+      disconnected = true;
+    });
   };
-  return json(result, 200, noStore);
+
+  void (async () => {
+    try {
+      const outcome = await runResearch(params, key, deps, { emit, isCancelled: () => disconnected });
+      emit(outcome.ok ? { type: "result", result: outcome.result } : { type: "error", message: outcome.error });
+    } catch (err) {
+      console.error("Research pipeline failed", err instanceof Error ? err.name : typeof err);
+      emit({ type: "error", message: "Something went wrong while running this research." });
+    } finally {
+      await writer.close().catch(() => {});
+    }
+  })();
+
+  return new Response(readable, { headers: { "content-type": `${NDJSON}; charset=utf-8`, "cache-control": "no-store" } });
 }
 
 const ROUTES: Record<string, { method: string; handler: (request: Request, deps: Deps) => Promise<Response> }> = {

@@ -37,7 +37,9 @@ Open http://localhost:5173, then:
 
 1. Click **Connect** and enter your Anthropic, OpenAI or Gemini key. It is verified, and you choose a model.
 2. Ask a research question (or pick an example), choose how many papers to extract, and press **Run**.
-3. Read the report on the right. Click any evidence chip (`E5`) to see the exact quote a claim rests on. The **Verifier** card lists everything that failed verification.
+3. Read the report on the right. Click any citation (`[1]`) or evidence chip (`E5`) to see the exact quotes a sentence rests on. The **Verifier** card lists everything that failed verification. Use **Download Markdown** or **Print / Save as PDF** to export.
+
+While a run is in progress, a step checklist updates from events the pipeline streams as each step actually starts and finishes. Clients opt in with `accept: application/x-ndjson`; other clients still get a single JSON response. Pressing **Cancel** closes the stream, and the server stops before its next model call.
 
 Your key stays in the browser tab's memory. Reloading the page disconnects.
 
@@ -123,6 +125,17 @@ Citation verification (`apps/worker/src/agents/verification/`) then runs two che
   - Unsupported claims are dropped from the report and listed in the Verifier card.
   - The reviewer is currently the same model that wrote the claims, so treat it as a check, not independent confirmation.
 
+Report synthesis (`apps/worker/src/agents/synthesis/`) writes the final report:
+
+- **Composed by code from what the pipeline actually did:** *Methods*, *Limitations of this review* and the numbered *References* (Vancouver style, built only from source metadata). They are accurate by construction.
+- **Written by the model:** executive summary, findings, comparative analysis, limitations of the evidence, and research gaps. It works only from claims that passed review; retracted papers' evidence is excluded.
+- **Every model-written sentence is checked by code:**
+  - It must cite real evidence ids.
+  - Every number in it must appear in the evidence it cites (small counts and publication years excepted). This catches invented or mis-transcribed statistics without a second model call.
+  - Sentences that fail are removed and listed in the Verifier.
+- **There is deliberately no "Background" section,** since it would require outside knowledge.
+- **Export:** Markdown download, plus Print / Save as PDF with a clean print layout.
+
 ### Configuration
 
 | Variable       | Kind   | Purpose                                                                 |
@@ -139,8 +152,9 @@ Citation verification (`apps/worker/src/agents/verification/`) then runs two che
 4. ~~Paper extraction agent with schema-validated, quote-verified output~~
 5. ~~Evidence analysis (cross-paper comparison with cited claims)~~
 6. ~~Citation verification (Crossref record checks, retraction flags, claim support review)~~
-7. Report synthesis (narrative report with citations; Markdown/PDF export)
-8. Durable orchestration (Cloudflare Workflows) with live progress in the UI
+7. ~~Report synthesis (cited narrative report, number checks, Markdown/PDF export)~~
+8. ~~Live progress in the UI (streamed pipeline events, step checklist, cancellation stops further model calls)~~
+   Next: durable orchestration (Cloudflare Workflows) so runs survive a closed tab
 9. ~~Web app (preview)~~
 10. Evaluation suite (retrieval precision/recall, citation accuracy, hallucination rate)
 

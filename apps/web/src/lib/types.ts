@@ -1,4 +1,4 @@
-import type { LlmProvider, ModelInfo, ResearchPreviewResult } from "@synthora/schemas";
+import type { LlmProvider, ModelInfo, PipelineStep, ProgressEvent, ResearchPreviewResult, StepStatus } from "@synthora/schemas";
 
 /**
  * The connected provider. Lives only in React state (tab memory): never
@@ -11,30 +11,48 @@ export interface Connection {
   model: string;
 }
 
+export const STEPS: readonly PipelineStep[] = ["search", "extract", "analyze", "verify", "report"];
+
+export interface StepState {
+  status: StepStatus | "pending";
+  detail?: string;
+}
+
+/** What the pipeline has actually reported so far. */
+export interface Progress {
+  steps: Record<PipelineStep, StepState>;
+  extract: { completed: number; total: number } | null;
+}
+
+export function initialProgress(): Progress {
+  return {
+    steps: { search: { status: "pending" }, extract: { status: "pending" }, analyze: { status: "pending" }, verify: { status: "pending" }, report: { status: "pending" } },
+    extract: null,
+  };
+}
+
+export function applyProgress(progress: Progress, event: ProgressEvent): Progress {
+  if (event.type === "step") {
+    return { ...progress, steps: { ...progress.steps, [event.step]: { status: event.status, ...(event.detail !== undefined && { detail: event.detail }) } } };
+  }
+  if (event.type === "extract") return { ...progress, extract: { completed: event.completed, total: event.total } };
+  return progress;
+}
+
+interface RunBase {
+  id: string;
+  query: string;
+  topN: number;
+  provider: LlmProvider;
+  model: string;
+  startedAt: number;
+  progress: Progress;
+}
+
 export type Run =
-  | { id: string; query: string; topN: number; provider: LlmProvider; model: string; startedAt: number; status: "running" }
-  | {
-      id: string;
-      query: string;
-      topN: number;
-      provider: LlmProvider;
-      model: string;
-      startedAt: number;
-      finishedAt: number;
-      status: "done";
-      result: ResearchPreviewResult;
-    }
-  | {
-      id: string;
-      query: string;
-      topN: number;
-      provider: LlmProvider;
-      model: string;
-      startedAt: number;
-      finishedAt: number;
-      status: "error" | "cancelled";
-      message: string;
-    };
+  | (RunBase & { status: "running" })
+  | (RunBase & { status: "done"; finishedAt: number; result: ResearchPreviewResult })
+  | (RunBase & { status: "error" | "cancelled"; finishedAt: number; message: string });
 
 export const PROVIDER_LABELS: Record<LlmProvider, string> = {
   anthropic: "Anthropic",

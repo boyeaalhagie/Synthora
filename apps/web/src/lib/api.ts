@@ -1,4 +1,4 @@
-import type { LlmProvider, ResearchPreviewResult, VerifyProviderResult } from "@synthora/schemas";
+import type { LlmProvider, ProgressEvent, ResearchPreviewResult, VerifyProviderResult } from "@synthora/schemas";
 
 /** An API failure with a message safe to show (the server never echoes keys). */
 export class ApiError extends Error {
@@ -49,8 +49,52 @@ export interface PreviewRequest {
   topN: number;
 }
 
-export async function runPreview(request: PreviewRequest, key: string, signal?: AbortSignal): Promise<ResearchPreviewResult> {
-  const { status, data } = await postJson("/api/research/preview", request, key, signal);
-  if (status === 200) return data as ResearchPreviewResult;
-  throw new ApiError(errorMessage(data, status), status);
+/**
+ * Runs the pipeline and streams its progress. `onEvent` receives every
+ * progress event as the server emits it; the promise resolves with the final
+ * result. Aborting `signal` closes the stream, which also stops the server
+ * from making further model calls.
+ */
+export async function runPreviewStream(
+  request: PreviewRequest,
+  key: string,
+  onEvent: (event: ProgressEvent) => void,
+  signal?: AbortSignal,
+): Promise<ResearchPreviewResult> {
+  let response: Response;
+  try {
+    response = await fetch("/api/research/preview", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: NDJSON_TYPE, "x-provider-key": key },
+      body: JSON.stringify(request),
+      ...(signal && { signal }),
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    throw new ApiError("Could not reach the Synthora server. Is the worker running (npm run dev:worker)?", 0);
+  }
+  if (!response.ok || !response.body) {
+    const data: unknown = await response.json().catch(() => undefined);
+    throw new ApiError(errorMessage(data, response.status), response.status);
+  }
+
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (value) buffer += value;
+    const lines = buffer.split("\n");
+    buffer = done ? "" : (lines.pop() ?? "");
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const event = JSON.parse(line) as ProgressEvent;
+      if (event.type === "result") return event.result;
+      if (event.type === "error") throw new ApiError(event.message, 200);
+      onEvent(event);
+    }
+    if (done) break;
+  }
+  throw new ApiError("The connection closed before the research finished.", 0);
 }
+
+const NDJSON_TYPE = "application/x-ndjson";

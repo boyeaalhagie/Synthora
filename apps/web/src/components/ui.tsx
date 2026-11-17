@@ -33,7 +33,7 @@ const TONES: Record<Tone, string> = {
 };
 
 export function Badge({ tone = "neutral", children }: { tone?: Tone; children: ReactNode }) {
-  return <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-xs font-medium ${TONES[tone]}`}>{children}</span>;
+  return <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 font-sans text-xs font-medium ${TONES[tone]}`}>{children}</span>;
 }
 
 export function Spinner({ className = "" }: { className?: string }) {
