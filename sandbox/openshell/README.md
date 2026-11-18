@@ -38,7 +38,9 @@ openshell status
 # 2. Build the image
 docker build -f sandbox/openshell/Dockerfile -t synthora-research:local .
 
-# 3. Store your key in the gateway (reads it from your shell; it is not put in the image)
+# 3. Import the provider profile (once per gateway; OpenShell 0.1.9 ships none),
+#    then store your key in the gateway. It is read from your shell, not put in the image.
+openshell provider profile import -f sandbox/openshell/providers/openai.yaml --global   # for OpenAI
 export ANTHROPIC_API_KEY=...        # or OPENAI_API_KEY / GEMINI_API_KEY
 openshell provider create --name synthora-anthropic --type anthropic --credential ANTHROPIC_API_KEY
 unset ANTHROPIC_API_KEY

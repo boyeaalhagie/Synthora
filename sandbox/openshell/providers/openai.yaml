@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Synthora copy of OpenShell v0.1.9 providers/openai.yaml (Apache-2.0).
+# Changed: `binaries` names the Node runtime in sandbox/openshell/Dockerfile,
+# the only process that calls the API. Import once per gateway:
+#   openshell provider profile import -f sandbox/openshell/providers/openai.yaml --global
+
+id: openai
+display_name: OpenAI
+description: OpenAI inference API
+category: inference
+inference_capable: true
+credentials:
+  - name: api_key
+    description: OpenAI API key
+    env_vars: [OPENAI_API_KEY]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+discovery:
+  credentials: [api_key]
+endpoints:
+  - host: api.openai.com
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+binaries: [/usr/local/bin/node]
