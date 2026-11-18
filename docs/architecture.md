@@ -78,6 +78,8 @@ apps/worker/src/
   security/          rate limiting and Turnstile
   storage/           D1 session store and anonymous ownership
 apps/worker/eval/    evaluation CLI and metrics
+apps/worker/cli/     research CLI (the same pipeline under Node)
+sandbox/openshell/   OpenShell image and policy for the research CLI
 packages/schemas/    Zod schemas shared by Worker and UI
 database/migrations/ D1 schema
 research/            evaluation datasets and experiment results
@@ -88,3 +90,4 @@ docs/                architecture, evaluation, deployment, decisions
 
 - [0001: Orchestration in TypeScript on Workers](decisions/0001-typescript-on-workers.md)
 - [0002: No durable workflows while keys are user-supplied](decisions/0002-no-durable-workflows-with-byok.md)
+- [0003: NVIDIA OpenShell runs a sandboxed copy of the pipeline](decisions/0003-openshell-sandboxed-runner.md)

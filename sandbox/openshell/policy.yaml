@@ -1,0 +1,81 @@
+# OpenShell policy for the Synthora research runner.
+#
+# Default deny: OpenShell blocks every outbound connection that no rule below
+# allows. Each rule is set to `enforce`; the schema's default, `audit`, only logs.
+# Only the Node runtime may connect, and only to the services Synthora uses.
+# A prompt-injected paper abstract therefore cannot make the run send data anywhere else.
+#
+# Keep in sync with the hosts in apps/worker/src/literature and src/providers.
+# test/openshell-policy.test.ts fails if a host is missing.
+version: 1
+
+filesystem_policy:
+  include_workdir: false
+  read_only:
+    - /usr
+    - /lib
+    - /etc
+    - /app
+    - /proc
+  read_write:
+    - /tmp
+
+landlock:
+  compatibility: best_effort
+
+process:
+  run_as_user: 1000
+  run_as_group: 1000
+
+network_policies:
+  # Literature sources: searching and record lookups only (GET).
+  literature:
+    endpoints:
+      - host: eutils.ncbi.nlm.nih.gov
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: read-only
+      - host: www.ebi.ac.uk
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: read-only
+      - host: api.crossref.org
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: read-only
+    binaries:
+      - path: /usr/local/bin/node
+
+  # Model providers. Attach the matching OpenShell provider so the real key is
+  # injected by the proxy; the sandbox only ever sees a placeholder.
+  # Delete the providers you do not use.
+  anthropic:
+    endpoints:
+      - host: api.anthropic.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: read-write
+    binaries:
+      - path: /usr/local/bin/node
+  openai:
+    endpoints:
+      - host: api.openai.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: read-write
+    binaries:
+      - path: /usr/local/bin/node
+  gemini:
+    endpoints:
+      - host: generativelanguage.googleapis.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: read-write
+    binaries:
+      - path: /usr/local/bin/node

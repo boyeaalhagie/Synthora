@@ -14,7 +14,8 @@
     "test": "npm run test --workspaces --if-present",
     "eval": "npm run eval --workspace @synthora/worker --",
     "build": "npm run build --workspace @synthora/web",
-    "deploy": "npm run typecheck && npm test && npm run build && npm run db:migrate:remote --workspace @synthora/worker && npm run deploy --workspace @synthora/worker"
+    "deploy": "npm run typecheck && npm test && npm run build && npm run db:migrate:remote --workspace @synthora/worker && npm run deploy --workspace @synthora/worker",
+    "research": "npm run research --workspace @synthora/worker --"
   },
   "engines": {
     "node": ">=20"

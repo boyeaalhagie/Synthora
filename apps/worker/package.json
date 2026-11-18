@@ -11,7 +11,9 @@
     "test:watch": "vitest",
     "eval": "tsx eval/run.ts",
     "db:migrate:local": "wrangler d1 migrations apply synthora --local",
-    "db:migrate:remote": "wrangler d1 migrations apply synthora --remote"
+    "db:migrate:remote": "wrangler d1 migrations apply synthora --remote",
+    "research": "tsx cli/research.ts",
+    "build:cli": "esbuild cli/research.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist-cli/research.mjs --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.9.0",
@@ -24,6 +26,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250101.0",
     "@types/node": "^24.19.2",
+    "esbuild": "^0.28.2",
     "tsx": "^4.23.15",
     "typescript": "^5.7.0",
     "vitest": "^5.1.0",

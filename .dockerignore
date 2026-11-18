@@ -1,0 +1,12 @@
+node_modules
+**/node_modules
+**/dist
+**/dist-cli
+**/.wrangler
+.git
+.dev.vars
+**/.dev.vars
+.env
+.env.*
+research
+*.png

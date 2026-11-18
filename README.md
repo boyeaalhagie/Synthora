@@ -49,7 +49,8 @@ Optional operator settings for local development: copy `apps/worker/.dev.vars.ex
 - [Evaluation](docs/evaluation.md): metrics, dataset, how to run, baseline results
 - [Deployment](docs/deployment.md): Cloudflare setup step by step
 - [Demo script](docs/demo-script.md): a five-minute walkthrough
-- [Decisions](docs/decisions): why TypeScript on Workers; why no durable workflows with BYOK
+- [OpenShell sandbox](sandbox/openshell/README.md): run the pipeline in an NVIDIA OpenShell sandbox with enforced network rules
+- [Decisions](docs/decisions): why TypeScript on Workers; why no durable workflows with BYOK; how OpenShell fits
 - [Blueprint](docs/blueprint.md): the original plan
 
 ## API
@@ -76,4 +77,5 @@ Optional operator settings for local development: copy `apps/worker/.dev.vars.ex
 | Evaluation framework with metrics | ✅ Seed labels are drafts pending expert review |
 | Security and failure-handling tests | ✅ Rate limits, Turnstile, CSP, key-handling tests |
 | Hosted on Cloudflare | 🟡 Deployment is configured and dry-run tested; needs your Cloudflare account ([guide](docs/deployment.md)) |
+| NVIDIA OpenShell sandboxing | 🟡 Sandboxed CLI, image and enforced policy are built and tested in code; not yet run on a Linux host ([guide](sandbox/openshell/README.md)) |
 | Architecture docs and demo video | 🟡 Docs and demo script are written; the video needs recording |

@@ -15,4 +15,4 @@ The whole production pipeline runs as TypeScript on Cloudflare Workers, with Wor
 - There is one deploy target and no always-on server, so user API keys never pass through an extra hop.
 - Shared Zod schemas validate data at every agent boundary, which is the job Pydantic would do in Python.
 - LangGraph is not used. The agent graph is small and fixed (six stages), so explicit Workflow steps are easier to test and reason about than a graph framework.
-- NVIDIA OpenShell needs a Linux/Docker host and is out of scope for now. If added later, it sits behind the Worker as a sandboxed tool-execution service and gets its own decision record.
+- NVIDIA OpenShell needs a Linux/Docker host, so it cannot run on Workers. It is used for a sandboxed command-line copy of the pipeline instead; see [0003](0003-openshell-sandboxed-runner.md).
