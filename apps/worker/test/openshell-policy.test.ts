@@ -31,6 +31,15 @@ describe("OpenShell policy", () => {
     expect(policy).not.toMatch(/enforcement: audit/);
   });
 
+  it("allows the request shapes the clients actually send", () => {
+    // PubMed fetches records with POST; a GET-only rule silently drops PubMed from every search.
+    expect(readFileSync(join(ROOT, "apps/worker/src/literature/pubmed.ts"), "utf8")).toMatch(/method: "POST"/);
+    expect(policy).toMatch(/method: POST\s+path: \/entrez\/eutils\/efetch\.fcgi/);
+    // Crossref lookups encode the DOI's "/" as %2F, which OpenShell rejects unless allowed.
+    expect(readFileSync(join(ROOT, "apps/worker/src/literature/crossref.ts"), "utf8")).toMatch(/encodeURIComponent\(doi\)/);
+    expect(policy).toMatch(/host: api\.crossref\.org[\s\S]*?allow_encoded_slash: true/);
+  });
+
   it("lets only the Node runtime connect", () => {
     const binaries = [...policy.matchAll(/^\s*- path: (\S+)\s*$/gm)].map((m) => m[1]);
     expect(new Set(binaries)).toEqual(new Set(["/usr/local/bin/node"]));

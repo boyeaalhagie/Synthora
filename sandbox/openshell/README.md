@@ -11,7 +11,20 @@ Why it runs beside the hosted app rather than in front of it: [decision 0003](..
 ## Requirements
 
 - Linux (Ubuntu or Debian) with Docker Engine 28+ and kernel 6.2+ with Landlock enabled. A free Oracle Cloud Ampere VM works, and the image builds for arm64.
-- macOS with Docker Desktop is also supported. Windows (WSL 2 with Docker Desktop) is experimental in OpenShell.
+- macOS with Docker Desktop is also supported. Windows (WSL 2 with Docker Desktop) is experimental in OpenShell, but it works with the setup below.
+
+### Windows (WSL 2 + Docker Desktop)
+
+Tested with OpenShell 0.1.9, Ubuntu 26.04 on WSL 2 (kernel 6.18), and Docker Desktop 29.9.
+
+1. **Docker Desktop → Settings → WSL integration:** turn on your Ubuntu distro, then **Apply & restart**.
+2. **Docker Desktop → Settings → Network → Enable host networking**, then **Apply & restart**. Each sandbox's supervisor uses host networking to reach the gateway at `127.0.0.1:17670`. With this on, a container's localhost reaches Windows, and WSL forwards that port to the gateway in Ubuntu.
+3. Install OpenShell inside Ubuntu (step 1 below). If the gateway fails with `no compute driver configured`, the service manager started before you joined the `docker` group. Then:
+   ```bash
+   mkdir -p ~/.config/openshell && echo OPENSHELL_COMPUTE_DRIVER=docker > ~/.config/openshell/gateway.env
+   ```
+   From PowerShell, run `wsl --terminate Ubuntu`, reopen Ubuntu and run `systemctl --user restart openshell-gateway`. If Ubuntu starts before Docker Desktop has connected, the gateway retries every 5 seconds until `/var/run/docker.sock` appears.
+4. Run the commands below from the repository through `/mnt/c/...`. The image built by Docker Desktop on Windows is the same one the gateway sees.
 
 ## Steps
 
@@ -69,11 +82,18 @@ ANTHROPIC_API_KEY=... node apps/worker/dist-cli/research.mjs "<question>" --prov
 
 ## What has been verified
 
-| Item | Status |
+Run on OpenShell 0.1.9 (WSL 2 + Docker Desktop), 2026-11-17.
+
+| Check | Result |
 |---|---|
-| CLI runs the full pipeline under Node | ✅ Tested against live PubMed, Europe PMC and Crossref. The model step was tested only with an invalid key, which failed cleanly. |
-| An OpenShell placeholder is accepted as a key | ✅ Unit test |
-| Policy covers every host the code calls, enforces every rule, and allows only `node` | ✅ `test/openshell-policy.test.ts` |
-| Image builds; policy loads in a live gateway | ⬜ Not yet run: the development machine has no Docker or Linux kernel |
-| Node trusts the proxy's certificate (`--use-system-ca`) | ⬜ Assumed from OpenShell's design; confirm on first run |
-| Read-only filesystem paths are enough for Node | ⬜ Confirm on first run. If Node fails at startup, check `openshell logs` for denied paths |
+| Image builds; policy loads in a live gateway | ✅ |
+| Site not in the policy (`example.com`) | ✅ Blocked: `DENIED /usr/local/bin/node -> example.com:443 [reason:transparent_tcp_policy_denied]` |
+| Allowed sites (PubMed, Europe PMC, Crossref, Anthropic) | ✅ Allowed, each logged with the rule that matched |
+| Write request to a read-only site (`POST` to Crossref) | ✅ Blocked by OpenShell: `policy_denied … POST /works not permitted by policy` |
+| Filesystem | ✅ Writes to `/app` and `/etc` fail with `EACCES`; `/tmp` is writable |
+| Node trusts the proxy's certificate (`--use-system-ca`) | ✅ HTTPS through OpenShell's inspection works |
+| Full pipeline inside the sandbox | ✅ 50 records from 2 sources, 2 of 2 DOIs confirmed, 0 denials. The model step ran with a dummy key, which the provider rejected as expected. |
+| Real key supplied through an OpenShell provider (placeholder swap) | ⬜ Needs a real key; a placeholder is accepted by the CLI (unit test) |
+| Policy covers every host and request shape the code uses | ✅ `test/openshell-policy.test.ts` |
+
+The first live run found two policy gaps, both now fixed and covered by tests. PubMed fetches records with `POST`, and Crossref lookups contain `%2F`.

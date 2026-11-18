@@ -20,7 +20,7 @@ Synthora's agents do not execute code, run shell commands or read local files. T
 
 - `apps/worker/cli/research.ts` runs the unchanged pipeline under Node. It reads the key from `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GEMINI_API_KEY`. These are the names OpenShell's provider profiles use.
 - `sandbox/openshell/Dockerfile` builds one bundled file on the official Node image. Only `/usr/local/bin/node` ever needs the network.
-- `sandbox/openshell/policy.yaml` is default deny. It allows `node` to reach the three literature hosts read-only and the provider hosts, all with `enforcement: enforce`. The filesystem is read-only apart from `/tmp`, and the process runs as a non-root user.
+- `sandbox/openshell/policy.yaml` is default deny. It allows `node` to make only the literature requests Synthora sends (PubMed search and record fetch, Europe PMC search, Crossref lookups) and to reach the provider hosts, all with `enforcement: enforce`. The filesystem is read-only apart from `/tmp`, and the process runs as a non-root user.
 - The key is attached as an OpenShell **provider**. The sandbox sees only a placeholder (`openshell:resolve:env:…`), which the proxy replaces on requests to the provider's own endpoints.
 - `test/openshell-policy.test.ts` fails if the code starts calling a host the policy does not allow, or if a rule drops to `audit` mode.
 
@@ -28,4 +28,4 @@ Synthora's agents do not execute code, run shell commands or read local files. T
 
 - People who want stronger isolation, such as institutions handling sensitive questions, can run Synthora on their own Linux host with enforced egress and an audit trail (`openshell logs`).
 - The hosted app is unchanged and does not depend on OpenShell.
-- OpenShell is pre-1.0 (v0.1.x), and Windows support (WSL 2 with Docker Desktop) is experimental. The policy has not yet been run against a live gateway. See `sandbox/openshell/README.md` for what is verified.
+- OpenShell is pre-1.0 (v0.1.x), and Windows support (WSL 2 with Docker Desktop) is experimental. The policy has been run against a live 0.1.9 gateway on WSL 2. See `sandbox/openshell/README.md` for what is verified.

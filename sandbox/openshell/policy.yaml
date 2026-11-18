@@ -27,24 +27,36 @@ process:
   run_as_group: "1000"
 
 network_policies:
-  # Literature sources: searching and record lookups only (GET).
+  # Literature sources: only the exact requests Synthora makes.
   literature:
     endpoints:
+      # PubMed: search (GET), then fetch records (POST, so many IDs fit in one request).
       - host: eutils.ncbi.nlm.nih.gov
         port: 443
         protocol: rest
         enforcement: enforce
-        access: read-only
+        rules:
+          - allow:
+              method: GET
+              path: /entrez/eutils/esearch.fcgi
+          - allow:
+              method: POST
+              path: /entrez/eutils/efetch.fcgi
       - host: www.ebi.ac.uk
         port: 443
         protocol: rest
         enforcement: enforce
-        access: read-only
+        rules:
+          - allow:
+              method: GET
+              path: /europepmc/webservices/rest/search
+      # Crossref: GET /works/<doi>. DOIs contain "/", which the client encodes as %2F.
       - host: api.crossref.org
         port: 443
         protocol: rest
         enforcement: enforce
         access: read-only
+        allow_encoded_slash: true
     binaries:
       - path: /usr/local/bin/node
 

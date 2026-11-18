@@ -77,5 +77,5 @@ Optional operator settings for local development: copy `apps/worker/.dev.vars.ex
 | Evaluation framework with metrics | ✅ Seed labels are drafts pending expert review |
 | Security and failure-handling tests | ✅ Rate limits, Turnstile, CSP, key-handling tests |
 | Hosted on Cloudflare | ✅ Live at https://synthora.memory-gallery.workers.dev ([guide](docs/deployment.md)) |
-| NVIDIA OpenShell sandboxing | 🟡 Sandboxed CLI, image and enforced policy are built and tested in code; not yet run on a Linux host ([guide](sandbox/openshell/README.md)) |
+| NVIDIA OpenShell sandboxing | ✅ Pipeline runs in an OpenShell 0.1.9 sandbox; blocked sites, write requests and file writes are denied and logged ([guide](sandbox/openshell/README.md)) |
 | Architecture docs and demo video | 🟡 Docs and demo script are written; the video needs recording |
