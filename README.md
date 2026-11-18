@@ -76,6 +76,6 @@ Optional operator settings for local development: copy `apps/worker/.dev.vars.ex
 | Live agent execution tracking | ✅ Streamed; runs stop if the tab closes ([why](docs/decisions/0002-no-durable-workflows-with-byok.md)) |
 | Evaluation framework with metrics | ✅ Seed labels are drafts pending expert review |
 | Security and failure-handling tests | ✅ Rate limits, Turnstile, CSP, key-handling tests |
-| Hosted on Cloudflare | 🟡 Deployment is configured and dry-run tested; needs your Cloudflare account ([guide](docs/deployment.md)) |
+| Hosted on Cloudflare | ✅ Live at https://synthora.memory-gallery.workers.dev ([guide](docs/deployment.md)) |
 | NVIDIA OpenShell sandboxing | 🟡 Sandboxed CLI, image and enforced policy are built and tested in code; not yet run on a Linux host ([guide](sandbox/openshell/README.md)) |
 | Architecture docs and demo video | 🟡 Docs and demo script are written; the video needs recording |

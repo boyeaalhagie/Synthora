@@ -22,7 +22,7 @@
       "database_name": "synthora",
       // Local development uses a SQLite file under .wrangler/. Before deploying, create the real database
       // (`npx wrangler d1 create synthora`) and replace this placeholder with the id it prints.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "0a85416b-f46a-452d-b631-17252c83960b",
       "migrations_dir": "../../database/migrations"
     }
   ],
