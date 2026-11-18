@@ -38,26 +38,32 @@ openshell status
 # 2. Build the image
 docker build -f sandbox/openshell/Dockerfile -t synthora-research:local .
 
-# 3. Import the provider profile (once per gateway; OpenShell 0.1.9 ships none),
-#    then store your key in the gateway. It is read from your shell, not put in the image.
-openshell provider profile import -f sandbox/openshell/providers/openai.yaml --global   # for OpenAI
-export ANTHROPIC_API_KEY=...        # or OPENAI_API_KEY / GEMINI_API_KEY
-openshell provider create --name synthora-anthropic --type anthropic --credential ANTHROPIC_API_KEY
-unset ANTHROPIC_API_KEY
+# 3. Import the provider profile (once per gateway; OpenShell 0.1.9 ships none)
+openshell provider profile import -f sandbox/openshell/providers/openai.yaml --global
 
-# 4. Run a question in the sandbox
+# 4. Store your key in the gateway. Run this line on its own, paste the key
+#    (it is not shown), press Enter, then run the next two lines.
+read -rs OPENAI_API_KEY && export OPENAI_API_KEY
+openshell provider create --name synthora-openai --type openai --credential OPENAI_API_KEY
+unset OPENAI_API_KEY
+
+# 5. Run a question in the sandbox
+openshell sandbox delete synthora 2>/dev/null
 openshell sandbox create --name synthora \
   --from synthora-research:local \
   --policy sandbox/openshell/policy.yaml \
-  --provider synthora-anthropic \
+  --provider synthora-openai \
   -- node /app/research.mjs "Does metformin reduce cancer risk in type 2 diabetes?" \
-     --provider anthropic --model <model-id> --top 5 > report.md
+     --provider openai --model gpt-5.5 --top 5 \
+  | sed -n '/^# /,$p' > report.md
 
-# 5. See what the sandbox allowed and denied
-openshell logs synthora --since 30m --source sandbox
+# 6. See what the sandbox allowed and denied
+openshell logs synthora --since 30m --source sandbox | grep -E "ALLOWED|DENIED"
 ```
 
-Progress is printed to stderr and the report (Markdown) to stdout. Use `openshell provider list-profiles` to see the exact profile names for OpenAI and Gemini.
+Progress goes to the terminal and the report (Markdown) to `report.md`. OpenShell prints its own startup lines to the same output. `sed -n '/^# /,$p'` drops them by keeping everything from the report's `# Title` line onward.
+
+For Anthropic or Gemini, import a profile for that provider first. Copy it from `providers/` in the [OpenShell repository](https://github.com/NVIDIA/OpenShell/tree/v0.1.9/providers) and set `binaries: [/usr/local/bin/node]`, as `providers/openai.yaml` here does. Check what is imported with `openshell provider list-profiles`.
 
 Optional settings that are not secret go in with `--env`: `NCBI_EMAIL`, `NCBI_API_KEY`, `CROSSREF_MAILTO`.
 

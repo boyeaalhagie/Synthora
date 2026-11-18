@@ -262,7 +262,8 @@ describe("synthesizeReport", () => {
     expect(prompt).not.toContain("0.99");
     expect(prompt).toContain("Reviewer note: AUCs come from different outcomes.");
 
-    expect(report.markdown).toContain("# Machine learning for cardiovascular risk prediction");
+    // The OpenShell guide separates the report from sandbox output by its first "# " line.
+    expect(report.markdown.startsWith("# Machine learning for cardiovascular risk prediction\n")).toBe(true);
     expect(report.markdown).toContain("Gradient boosting reported the highest discrimination, with an AUC of 0.86. [1] A deep network");
     expect(report.markdown).toContain("## Comparative analysis\n\n_No statements in this section passed verification._\n\n### Study characteristics");
     expect(report.markdown).toContain("| Smith 2023 [1] | prediction model | 12,345 |");
