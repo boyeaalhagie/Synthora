@@ -20,9 +20,14 @@ import { CliError, parseCli, USAGE } from "./config.js";
 const log = (line: string) => process.stderr.write(`${line}\n`);
 
 async function main(): Promise<number> {
+  const argv = process.argv.slice(2);
+  if (argv.length === 0 || argv.includes("--help") || argv.includes("-h")) {
+    process.stdout.write(`${USAGE}\n`);
+    return argv.length === 0 ? 2 : 0;
+  }
   let config;
   try {
-    config = parseCli(process.argv.slice(2), process.env);
+    config = parseCli(argv, process.env);
   } catch (err) {
     if (err instanceof CliError || err instanceof TypeError) {
       log(`${err.message}\n\n${USAGE}`);

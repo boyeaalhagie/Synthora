@@ -13,7 +13,6 @@ filesystem_policy:
   include_workdir: false
   read_only:
     - /usr
-    - /lib
     - /etc
     - /app
     - /proc
